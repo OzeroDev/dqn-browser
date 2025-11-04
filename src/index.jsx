@@ -21,7 +21,43 @@ function GridWorldPane() {
     lastReward,
     epsilon,
     avgReward,
+    getQValues,
+    exploreCount,
+    exploitCount,
   } = useDQN({ gridState: state, envStep: step, envReset: reset });
+
+  const [cellQGrid, setCellQGrid] = useState(null);
+
+  // compute Q-values for every valid cell whenever grid state or model changes
+  useEffect(() => {
+    if (!state || !getQValues) {
+      setCellQGrid(null);
+      return;
+    }
+
+    const gs = state.gridSize;
+    const grid = Array.from({ length: gs }, () => Array.from({ length: gs }, () => null));
+
+    for (let r = 0; r < gs; r++) {
+      for (let c = 0; c < gs; c++) {
+        const isBlock = state.blocks.some((b) => b[0] === r && b[1] === c);
+        const isPit = state.pit[0] === r && state.pit[1] === c;
+        const isGoal = state.goalPos[0] === r && state.goalPos[1] === c;
+        if (isBlock || isPit || isGoal) {
+          grid[r][c] = null;
+          continue;
+        }
+        try {
+          const q = getQValues([r, c]);
+          grid[r][c] = Array.isArray(q) ? q : null;
+        } catch (e) {
+          grid[r][c] = null;
+        }
+      }
+    }
+
+    setCellQGrid(grid);
+  }, [state, getQValues]);
 
   useEffect(() => {
     reset();
@@ -38,6 +74,7 @@ function GridWorldPane() {
           blocks={state.blocks}
           pit={state.pit}
           goal={state.goalPos}
+          actionQGrid={cellQGrid}
         />
       </div>
       <div className="mt-6 flex gap-3">
@@ -69,6 +106,41 @@ function GridWorldPane() {
         <div>Last Episode Reward: {lastReward.toFixed(3)}</div>
         <div>Epsilon: {epsilon.toFixed(3)}</div>
         <div>Avg Reward (10): {avgReward.toFixed(3)}</div>
+      </div>
+      <div className="mt-6 w-96 text-gray-200">
+        <div className="font-medium mb-2">Explore vs Exploit (current episode)</div>
+        {(() => {
+          const e = exploreCount || 0;
+          const x = exploitCount || 0;
+          const total = e + x || 0;
+          const explorePct = total > 0 ? Math.round((e / total) * 100) : 0;
+          const exploitPct = total > 0 ? Math.round((x / total) * 100) : 0;
+          return (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <div>Explore (random)</div>
+                <div className="text-gray-400">{e} ({explorePct}%)</div>
+              </div>
+              <div className="w-full bg-gray-800 rounded h-4">
+                <div
+                  className="bg-yellow-500 h-4 rounded"
+                  style={{ width: `${explorePct}%` }}
+                />
+              </div>
+
+              <div className="flex items-center justify-between text-sm">
+                <div>Exploit (greedy)</div>
+                <div className="text-gray-400">{x} ({exploitPct}%)</div>
+              </div>
+              <div className="w-full bg-gray-800 rounded h-4">
+                <div
+                  className="bg-blue-500 h-4 rounded"
+                  style={{ width: `${exploitPct}%` }}
+                />
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
