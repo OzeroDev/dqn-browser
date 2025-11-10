@@ -7,6 +7,7 @@ export default function GridWorldCanvas({
   blocks,
   pit,
   goal,
+  actionQGrid, // 2D array of q-values for each cell or null
 }) {
   const canvasRef = useRef(null);
   useEffect(() => {
@@ -59,7 +60,75 @@ export default function GridWorldCanvas({
     ctx.beginPath();
     ctx.arc(cx, cy, Math.floor(cellSize / 3), 0, Math.PI * 2);
     ctx.fill();
-  }, [gridSize, cellSize, agentPos, blocks, pit, goal]);
+
+    // draw action arrows for every valid cell if provided
+    if (Array.isArray(actionQGrid)) {
+      const gs = gridSize;
+      const minAlpha = 0.12;
+
+      const drawTriCell = (r, c, dir, alpha) => {
+        const cx = c * cellSize + cellSize / 2;
+        const cy = r * cellSize + cellSize / 2;
+        const s = Math.floor(cellSize * 0.12);
+        const offset = Math.floor(cellSize * 0.24);
+        ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+        ctx.beginPath();
+        if (dir === 0) {
+          const nx = cx;
+          const ny = cy - offset;
+          ctx.moveTo(nx, ny - s);
+          ctx.lineTo(nx - s * 0.6, ny + s * 0.6);
+          ctx.lineTo(nx + s * 0.6, ny + s * 0.6);
+        } else if (dir === 1) {
+          const nx = cx;
+          const ny = cy + offset;
+          ctx.moveTo(nx, ny + s);
+          ctx.lineTo(nx - s * 0.6, ny - s * 0.6);
+          ctx.lineTo(nx + s * 0.6, ny - s * 0.6);
+        } else if (dir === 2) {
+          const nx = cx - offset;
+          const ny = cy;
+          ctx.moveTo(nx - s, ny);
+          ctx.lineTo(nx + s * 0.6, ny - s * 0.6);
+          ctx.lineTo(nx + s * 0.6, ny + s * 0.6);
+        } else if (dir === 3) {
+          const nx = cx + offset;
+          const ny = cy;
+          ctx.moveTo(nx + s, ny);
+          ctx.lineTo(nx - s * 0.6, ny - s * 0.6);
+          ctx.lineTo(nx - s * 0.6, ny + s * 0.6);
+        }
+        ctx.closePath();
+        ctx.fill();
+      };
+
+      for (let r = 0; r < gs; r++) {
+        for (let c = 0; c < gs; c++) {
+          const qArr = actionQGrid[r] && actionQGrid[r][c];
+          if (!qArr) continue;
+          // skip blocks/pit/goal drawing safety
+          const isBlock = blocks.some((b) => b[0] === r && b[1] === c);
+          const isPit = pit && pit[0] === r && pit[1] === c;
+          const isGoal = goal && goal[0] === r && goal[1] === c;
+          if (isBlock || isPit || isGoal) continue;
+
+          const vals = qArr.map((v) => Number(v));
+          const min = Math.min(...vals);
+          const max = Math.max(...vals);
+          const range = Math.abs(max - min);
+          const alphas = vals.map((v) => {
+            if (range < 1e-6) return 0.5;
+            const norm = (v - min) / range;
+            return Math.min(1, Math.max(minAlpha, norm));
+          });
+
+          for (let a = 0; a < 4; a++) {
+            drawTriCell(r, c, a, alphas[a]);
+          }
+        }
+      }
+    }
+  }, [gridSize, cellSize, agentPos, blocks, pit, goal, actionQGrid]);
 
   return <canvas ref={canvasRef} className="border border-gray-700 rounded" />;
 }

@@ -49,6 +49,8 @@ export default function useDQN({ gridState, envStep, envReset }) {
   const [lastReward, setLastReward] = useState(0);
   const [epsilon, setEpsilon] = useState(1.0);
   const [avgReward, setAvgReward] = useState(0);
+  const [exploreCount, setExploreCount] = useState(0);
+  const [exploitCount, setExploitCount] = useState(0);
 
   const policyRef = useRef(null);
   const optimizerRef = useRef(null);
@@ -133,10 +135,11 @@ export default function useDQN({ gridState, envStep, envReset }) {
   const computeEpsilon = (t) =>
     EPS_END + (EPS_START - EPS_END) * Math.exp(-1.0 * t / EPS_DECAY);
 
+  // returns { action, greedy }
   const selectAction = (stateArr, eps) => {
     const features = createFeatures(stateArr);
     const batch = inferBatchGPURef.current;
-    
+
     for (let i = 0; i < nObs; i++) {
       batch.data[0][i] = Number(features[i]);
     }
@@ -148,9 +151,26 @@ export default function useDQN({ gridState, envStep, envReset }) {
       if (qData[i] > qData[bestIdx]) bestIdx = i;
     }
 
-    if (Math.random() > eps) return bestIdx;
-    return Math.floor(Math.random() * nActions);
+    const greedy = Math.random() > eps;
+    if (greedy) return { action: bestIdx, greedy: true };
+    return { action: Math.floor(Math.random() * nActions), greedy: false };
   };
+
+  // Return Q-values for a single raw grid position [r, c]
+  const getQValues = useCallback((rawPos) => {
+    if (!policyRef.current || !inferBatchGPURef.current) return null;
+    const features = createFeatures(rawPos);
+    const batch = inferBatchGPURef.current;
+    for (let i = 0; i < nObs; i++) {
+      batch.data[0][i] = Number(features[i]);
+    }
+    const q = policyRef.current.forward(batch);
+    try {
+      return q.data[0].slice();
+    } catch (e) {
+      return null;
+    }
+  }, []);
 
   const optimizeModel = () => {
     if (memoryRef.current.length < BATCH_SIZE) return;
@@ -199,16 +219,26 @@ export default function useDQN({ gridState, envStep, envReset }) {
       let globalStep = 0;
       for (let ep = 0; ep < episodes; ep++) {
         if (stopRef.current) break;
-        
+        // reset per-episode explore/exploit counts
+        setExploreCount(0);
+        setExploitCount(0);
+
         let rawState = envReset();
         let done = false;
         let episodeReward = 0;
-
+        
         while (!done) {
           if (stopRef.current) break;
 
           const eps = computeEpsilon(globalStep);
-          const action = selectAction(rawState, eps);
+          const { action, greedy } = selectAction(rawState, eps);
+
+          // track explore vs exploit
+          if (greedy) {
+            setExploitCount((c) => c + 1);
+          } else {
+            setExploreCount((c) => c + 1);
+          }
 
           const { obs, reward, terminated, truncated } = envStep(action);
           const nextRawState = obs;
@@ -272,5 +302,8 @@ export default function useDQN({ gridState, envStep, envReset }) {
     lastReward,
     epsilon,
     avgReward,
+    exploreCount,
+    exploitCount,
+    getQValues,
   };
 }
