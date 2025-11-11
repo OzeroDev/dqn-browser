@@ -6,11 +6,11 @@ import "./index.css";
 import GridWorldCanvas from "./components/GridWorldCanvas.jsx";
 import useGridWorld from "./hooks/useGridWorld.js";
 import useDQN from "./hooks/useDQN.js";
+import useTableQLearning from "./hooks/useTableQLearning.js";
 import CartPoleCanvas from "./components/CartPoleCanvas.jsx";
 import useCartPoleDQN from "./hooks/useCartPoleDQN.js";
-
-// GridWorld view pane extracted from old App
-function GridWorldPane() {
+// GridWorld view pane for Deep Q (DQN)
+function GridWorldDQNPane() {
   const { state, reset, step } = useGridWorld({ gridSize: 6, cellSize: 72 });
   const {
     startTraining,
@@ -65,7 +65,7 @@ function GridWorldPane() {
 
   return (
     <div className="flex flex-col items-center">
-      <h2 className="text-2xl font-semibold mt-4">GridWorld DQN</h2>
+      <h2 className="text-2xl font-semibold mt-4">GridWorld Deep Q</h2>
       <div className="mt-6">
         <GridWorldCanvas
           gridSize={state.gridSize}
@@ -107,44 +107,111 @@ function GridWorldPane() {
         <div>Epsilon: {epsilon.toFixed(3)}</div>
         <div>Avg Reward (10): {avgReward.toFixed(3)}</div>
       </div>
-      <div className="mt-6 w-96 text-gray-200">
-        <div className="font-medium mb-2">Explore vs Exploit (current episode)</div>
-        {(() => {
-          const e = exploreCount || 0;
-          const x = exploitCount || 0;
-          const total = e + x || 0;
-          const explorePct = total > 0 ? Math.round((e / total) * 100) : 0;
-          const exploitPct = total > 0 ? Math.round((x / total) * 100) : 0;
-          return (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <div>Explore (random)</div>
-                <div className="text-gray-400">{e} ({explorePct}%)</div>
-              </div>
-              <div className="w-full bg-gray-800 rounded h-4">
-                <div
-                  className="bg-yellow-500 h-4 rounded"
-                  style={{ width: `${explorePct}%` }}
-                />
-              </div>
+    </div>
+  );
+}
 
-              <div className="flex items-center justify-between text-sm">
-                <div>Exploit (greedy)</div>
-                <div className="text-gray-400">{x} ({exploitPct}%)</div>
-              </div>
-              <div className="w-full bg-gray-800 rounded h-4">
-                <div
-                  className="bg-blue-500 h-4 rounded"
-                  style={{ width: `${exploitPct}%` }}
-                />
-              </div>
-            </div>
-          );
-        })()}
+// GridWorld view pane for Table Q-learning
+function GridWorldTablePane() {
+  const { state, reset, step } = useGridWorld({ gridSize: 6, cellSize: 72 });
+  const {
+    startTraining: startTableTraining,
+    stopTraining: stopTableTraining,
+    training: tableTraining,
+    episode: tableEpisode,
+    totalSteps: tableTotalSteps,
+    lastReward: tableLastReward,
+    epsilon: tableEpsilon,
+    avgReward: tableAvgReward,
+    getQValues: getTableQValues,
+    exploreCount: tableExploreCount,
+    exploitCount: tableExploitCount,
+  } = useTableQLearning({ gridState: state, envStep: step, envReset: reset });
+
+  const [cellTableQGrid, setCellTableQGrid] = useState(null);
+
+  useEffect(() => {
+    if (!state || !getTableQValues) {
+      setCellTableQGrid(null);
+      return;
+    }
+
+    const gs = state.gridSize;
+    const grid = Array.from({ length: gs }, () => Array.from({ length: gs }, () => null));
+
+    for (let r = 0; r < gs; r++) {
+      for (let c = 0; c < gs; c++) {
+        const isBlock = state.blocks.some((b) => b[0] === r && b[1] === c);
+        const isPit = state.pit[0] === r && state.pit[1] === c;
+        const isGoal = state.goalPos[0] === r && state.goalPos[1] === c;
+        if (isBlock || isPit || isGoal) {
+          grid[r][c] = null;
+          continue;
+        }
+        try {
+          const q = getTableQValues([r, c]);
+          grid[r][c] = Array.isArray(q) ? q : null;
+        } catch (e) {
+          grid[r][c] = null;
+        }
+      }
+    }
+
+    setCellTableQGrid(grid);
+  }, [state, getTableQValues]);
+
+  useEffect(() => {
+    reset();
+  }, [reset]);
+
+  return (
+    <div className="flex flex-col items-center">
+      <h2 className="text-2xl font-semibold mt-4">GridWorld Table Q</h2>
+      <div className="mt-6">
+        <GridWorldCanvas
+          gridSize={state.gridSize}
+          cellSize={state.cellSize}
+          agentPos={state.agentPos}
+          blocks={state.blocks}
+          pit={state.pit}
+          goal={state.goalPos}
+          actionQGrid={cellTableQGrid}
+        />
+      </div>
+      <div className="mt-6 flex gap-3">
+        <button
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded"
+          onClick={reset}
+          disabled={tableTraining}
+        >
+          Reset
+        </button>
+        <button
+          className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded"
+          onClick={() => startTableTraining({ episodes: 500 })}
+          disabled={tableTraining}
+        >
+          Start Training
+        </button>
+        <button
+          className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded"
+          onClick={stopTableTraining}
+          disabled={!tableTraining}
+        >
+          Stop
+        </button>
+      </div>
+      <div className="mt-6 text-gray-300">
+        <div>Episode: {tableEpisode}</div>
+        <div>Total Steps: {tableTotalSteps}</div>
+        <div>Last Episode Reward: {tableLastReward.toFixed(3)}</div>
+        <div>Epsilon: {tableEpsilon.toFixed(3)}</div>
+        <div>Avg Reward (10): {tableAvgReward.toFixed(3)}</div>
       </div>
     </div>
   );
 }
+ 
 
 // New CartPole view pane
 function CartPolePane() {
@@ -206,7 +273,7 @@ function CartPolePane() {
 }
 
 function App() {
-  const [mode, setMode] = useState("grid");
+  const [mode, setMode] = useState("grid-dqn");
 
   return (
     <div className="h-screen w-screen bg-gray-900 text-white flex flex-col items-center">
@@ -219,12 +286,15 @@ function App() {
           value={mode}
           onChange={(e) => setMode(e.target.value)}
         >
-          <option value="grid">GridWorld</option>
-          <option value="cartpole">CartPole (Balance Broom)</option>
+          <option value="grid-dqn">GridWorld (Deep Q-Learning)</option>
+          <option value="grid-table">GridWorld (Q-Learning)</option>
+          <option value="cartpole">CartPole</option>
         </select>
       </div>
 
-      {mode === "grid" ? <GridWorldPane /> : <CartPolePane />}
+      {mode === "grid-dqn" && <GridWorldDQNPane />}
+      {mode === "grid-table" && <GridWorldTablePane />}
+      {mode === "cartpole" && <CartPolePane />}
     </div>
   );
 }
