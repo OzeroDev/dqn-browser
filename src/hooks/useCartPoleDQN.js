@@ -1,25 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import * as tf from '@tensorflow/tfjs';
 
-const { torch } = require("js-pytorch");
-
-// DQN network (similar to useDQN.js)
-class DQN extends torch.nn.Module {
-  constructor(nObs, nActions, device = "gpu") {
-    super();
-    this.l1 = new torch.nn.Linear(nObs, 128, device);
-    this.r1 = new torch.nn.ReLU();
-    this.l2 = new torch.nn.Linear(128, 128, device);
-    this.r2 = new torch.nn.ReLU();
-    this.l3 = new torch.nn.Linear(128, nActions, device);
-  }
-  forward(x) {
-    let z = this.l1.forward(x);
-    z = this.r1.forward(z);
-    z = this.l2.forward(z);
-    z = this.r2.forward(z);
-    z = this.l3.forward(z);
-    return z;
-  }
+function createDQNModel(nObs, nActions) {
+  const model = tf.sequential();
+  model.add(tf.layers.dense({ units: 128, activation: 'relu', inputShape: [nObs] }));
+  model.add(tf.layers.dense({ units: 128, activation: 'relu' }));
+  model.add(tf.layers.dense({ units: nActions }));
+  return model;
 }
 
 class ReplayMemory {
@@ -148,29 +135,27 @@ export default function useCartPoleDQN() {
   const simRef = useRef(createCartPoleSim());
 
   useEffect(() => {
-    policyRef.current = new DQN(nObs, nActions, "gpu");
-    optimizerRef.current = new torch.optim.Adam(policyRef.current.parameters(), 3e-4, 0);
+    policyRef.current = createDQNModel(nObs, nActions);
+    optimizerRef.current = tf.train.adam(3e-4);
 
+    // warm up weights
     const zeroRow = Array(nObs).fill(0);
     const zeroBatch = Array.from({ length: BATCH_SIZE }, () => [...zeroRow]);
-
-    inferBatchGPURef.current = torch.tensor(zeroBatch, false, "gpu");
-    trainStatesGPURef.current = torch.tensor(zeroBatch, false, "gpu");
-    trainNextStatesGPURef.current = torch.tensor(zeroBatch, false, "gpu");
-
-    policyRef.current.forward(inferBatchGPURef.current);
+    tf.tidy(() => {
+      const t = tf.tensor2d(zeroBatch);
+      policyRef.current.predict(t);
+    });
   }, []);
 
   const computeEpsilon = (t) =>
     EPS_END + (EPS_START - EPS_END) * Math.exp(-1.0 * t / EPS_DECAY);
 
   const selectAction = (stateArr, eps) => {
-    const batch = inferBatchGPURef.current;
-    for (let i = 0; i < nObs; i++) {
-      batch.data[0][i] = Number(stateArr[i]);
-    }
-    const q = policyRef.current.forward(batch);
-    const qData = q.data[0];
+    const qData = tf.tidy(() => {
+      const input = tf.tensor2d([stateArr]);
+      const out = policyRef.current.predict(input);
+      return out.arraySync()[0];
+    });
     let bestIdx = 0;
     for (let i = 1; i < qData.length; i++) {
       if (qData[i] > qData[bestIdx]) bestIdx = i;
@@ -183,35 +168,39 @@ export default function useCartPoleDQN() {
     if (memoryRef.current.length < BATCH_SIZE) return;
 
     const batch = memoryRef.current.sample(BATCH_SIZE);
-    const statesGPU = trainStatesGPURef.current;
-    const nextStatesGPU = trainNextStatesGPURef.current;
-
+    const statesBatch = [];
+    const nextStatesBatch = [];
     for (let i = 0; i < BATCH_SIZE; i++) {
-      const s = batch[i].state;
-      const ns = batch[i].nextState;
-      for (let j = 0; j < nObs; j++) {
-        statesGPU.data[i][j] = s[j];
-        nextStatesGPU.data[i][j] = ns[j];
-      }
+      statesBatch.push(batch[i].state);
+      nextStatesBatch.push(batch[i].nextState);
     }
 
-    const q = policyRef.current.forward(statesGPU);
-    const nextQ = policyRef.current.forward(nextStatesGPU);
-    const nextQMax = nextQ.data.map((row) => Math.max(...row));
+    tf.tidy(() => {
+      const statesTensor = tf.tensor2d(statesBatch);
+      const nextStatesTensor = tf.tensor2d(nextStatesBatch);
 
-    const targetData = q.data.map((row, i) => {
-      const tdTarget = batch[i].reward + (batch[i].done ? 0 : GAMMA * nextQMax[i]);
-      const updated = row.slice();
-      updated[batch[i].action] = tdTarget;
-      return updated;
+      const qPred = policyRef.current.predict(statesTensor);
+      const nextQPred = policyRef.current.predict(nextStatesTensor);
+
+      const qPredArr = qPred.arraySync();
+      const nextQArr = nextQPred.arraySync();
+      const nextQMax = nextQArr.map((row) => Math.max(...row));
+
+      const targetData = qPredArr.map((row, i) => {
+        const tdTarget = batch[i].reward + (batch[i].done ? 0 : GAMMA * nextQMax[i]);
+        const updated = row.slice();
+        updated[batch[i].action] = tdTarget;
+        return updated;
+      });
+
+      const target = tf.tensor2d(targetData);
+
+      optimizerRef.current.minimize(() => {
+        const preds = policyRef.current.predict(statesTensor);
+        const loss = tf.losses.meanSquaredError(target, preds).mean();
+        return loss;
+      }, true);
     });
-
-    const target = torch.tensor(targetData, false, "gpu");
-    const diff = q.sub(target);
-    const loss = torch.mean(diff.mul(diff)); // MSE
-    loss.backward();
-    optimizerRef.current.step();
-    optimizerRef.current.zero_grad();
   };
 
   const resetEnv = useCallback(() => {

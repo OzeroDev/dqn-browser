@@ -1,24 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import * as tf from '@tensorflow/tfjs';
 
-const { torch } = require("js-pytorch");
-
-class DQN extends torch.nn.Module {
-  constructor(nObs, nActions, device = "gpu") {
-    super();
-    this.l1 = new torch.nn.Linear(nObs, 128, device);
-    this.r1 = new torch.nn.ReLU();
-    this.l2 = new torch.nn.Linear(128, 128, device);
-    this.r2 = new torch.nn.ReLU();
-    this.l3 = new torch.nn.Linear(128, nActions, device);
-  }
-  forward(x) {
-    let z = this.l1.forward(x);
-    z = this.r1.forward(z);
-    z = this.l2.forward(z);
-    z = this.r2.forward(z);
-    z = this.l3.forward(z);
-    return z;
-  }
+function createDQNModel(nObs, nActions) {
+  const model = tf.sequential();
+  model.add(tf.layers.dense({ units: 128, activation: 'relu', inputShape: [nObs] }));
+  model.add(tf.layers.dense({ units: 128, activation: 'relu' }));
+  model.add(tf.layers.dense({ units: nActions }));
+  return model;
 }
 
 class ReplayMemory {
@@ -69,6 +57,7 @@ export default function useDQN({ gridState, envStep, envReset }) {
   const gridSize = gridState?.gridSize || 6;
   const nObs = 6; // [norm_row, norm_col, goal_row_dist, goal_col_dist, pit_row_dist, pit_col_dist]
 
+  // we'll build JS arrays for batches and convert to tensors when needed
   const inferBatchGPURef = useRef(null);
   const trainStatesGPURef = useRef(null);
   const trainNextStatesGPURef = useRef(null);
@@ -93,17 +82,25 @@ export default function useDQN({ gridState, envStep, envReset }) {
   }, [gridState]);
 
   useEffect(() => {
-    policyRef.current = new DQN(nObs, nActions, "gpu");
-    optimizerRef.current = new torch.optim.Adam(policyRef.current.parameters(), 1e-3, 0);
+    policyRef.current = createDQNModel(nObs, nActions);
+    // smaller LR to reduce instability
+    optimizerRef.current = tf.train.adam(5e-4);
 
+    // create a target network for stable Q-learning
+    // target network starts with same weights as policy
+    const target = createDQNModel(nObs, nActions);
+    target.setWeights(policyRef.current.getWeights());
+    policyRef.current.target = target;
+    // step counter for periodic target updates
+    policyRef.current._targetUpdateCounter = 0;
+
+    // warm up with a single prediction to ensure weights are created
     const zeroRow = Array(nObs).fill(0);
     const zeroBatch = Array.from({ length: BATCH_SIZE }, () => [...zeroRow]);
-
-    inferBatchGPURef.current = torch.tensor(zeroBatch, false, "gpu");
-    trainStatesGPURef.current = torch.tensor(zeroBatch, false, "gpu");
-    trainNextStatesGPURef.current = torch.tensor(zeroBatch, false, "gpu");
-
-    policyRef.current.forward(inferBatchGPURef.current);
+    tf.tidy(() => {
+      const t = tf.tensor2d(zeroBatch);
+      policyRef.current.predict(t);
+    });
   }, [nObs]);
 
   // Create rich feature representation from raw position
@@ -138,14 +135,14 @@ export default function useDQN({ gridState, envStep, envReset }) {
   // returns { action, greedy }
   const selectAction = (stateArr, eps) => {
     const features = createFeatures(stateArr);
-    const batch = inferBatchGPURef.current;
+    // predict using tfjs
+    const qData = tf.tidy(() => {
+      const input = tf.tensor2d([features]);
+      const out = policyRef.current.predict(input);
+      const arr = out.arraySync();
+      return arr[0];
+    });
 
-    for (let i = 0; i < nObs; i++) {
-      batch.data[0][i] = Number(features[i]);
-    }
-
-    const q = policyRef.current.forward(batch);
-    const qData = q.data[0];
     let bestIdx = 0;
     for (let i = 1; i < qData.length; i++) {
       if (qData[i] > qData[bestIdx]) bestIdx = i;
@@ -158,15 +155,15 @@ export default function useDQN({ gridState, envStep, envReset }) {
 
   // Return Q-values for a single raw grid position [r, c]
   const getQValues = useCallback((rawPos) => {
-    if (!policyRef.current || !inferBatchGPURef.current) return null;
+    if (!policyRef.current) return null;
     const features = createFeatures(rawPos);
-    const batch = inferBatchGPURef.current;
-    for (let i = 0; i < nObs; i++) {
-      batch.data[0][i] = Number(features[i]);
-    }
-    const q = policyRef.current.forward(batch);
     try {
-      return q.data[0].slice();
+      const qData = tf.tidy(() => {
+        const input = tf.tensor2d([features]);
+        const out = policyRef.current.predict(input);
+        return out.arraySync()[0];
+      });
+      return qData.slice();
     } catch (e) {
       return null;
     }
@@ -177,36 +174,75 @@ export default function useDQN({ gridState, envStep, envReset }) {
 
     const batch = memoryRef.current.sample(BATCH_SIZE);
 
-    const statesGPU = trainStatesGPURef.current;
-    const nextStatesGPU = trainNextStatesGPURef.current;
-    
+    const statesBatch = [];
+    const nextStatesBatch = [];
     for (let i = 0; i < BATCH_SIZE; i++) {
-      const s = batch[i].state;
-      const ns = batch[i].nextState;
-      for (let j = 0; j < nObs; j++) {
-        statesGPU.data[i][j] = s[j];
-        nextStatesGPU.data[i][j] = ns[j];
-      }
+      statesBatch.push(batch[i].state);
+      nextStatesBatch.push(batch[i].nextState);
     }
 
-    const q = policyRef.current.forward(statesGPU);
-    const nextQ = policyRef.current.forward(nextStatesGPU);
-    const nextQMax = nextQ.data.map((row) => Math.max(...row));
+    // Use tfjs to compute targets and apply gradients
+    // Capture and log loss occasionally for debugging
+    tf.tidy(() => {
+      const statesTensor = tf.tensor2d(statesBatch);
+      const nextStatesTensor = tf.tensor2d(nextStatesBatch);
 
-    const targetData = q.data.map((row, i) => {
-      const tdTarget = batch[i].reward + (batch[i].done ? 0 : GAMMA * nextQMax[i]);
-      const updated = row.slice();
-      updated[batch[i].action] = tdTarget;
-      return updated;
+      const qPred = policyRef.current.predict(statesTensor);
+  // use target network for next-Q predictions if available
+  const targetNet = policyRef.current.target || policyRef.current;
+  const nextQPred = targetNet.predict(nextStatesTensor);
+
+      const qPredArr = qPred.arraySync();
+      const nextQArr = nextQPred.arraySync();
+      const nextQMax = nextQArr.map((row) => Math.max(...row));
+
+      const targetData = qPredArr.map((row, i) => {
+        const tdTarget = batch[i].reward + (batch[i].done ? 0 : GAMMA * nextQMax[i]);
+        const updated = row.slice();
+        updated[batch[i].action] = tdTarget;
+        return updated;
+      });
+
+      const targetTensor = tf.tensor2d(targetData);
+
+      // compute gradients manually so we can clip them
+      const varGrads = tf.variableGrads(() => {
+        const preds = policyRef.current.predict(statesTensor);
+        const loss = tf.losses.meanSquaredError(targetTensor, preds).mean();
+        return loss;
+      });
+
+      try {
+        // clip gradients to avoid explosions
+        const CLIP_VAL = 5.0;
+        const clippedGrads = {};
+        Object.keys(varGrads.grads).forEach((k) => {
+          clippedGrads[k] = tf.clipByValue(varGrads.grads[k], -CLIP_VAL, CLIP_VAL);
+        });
+
+        optimizerRef.current.applyGradients(clippedGrads);
+
+        // occasional logging of loss
+        if (Math.random() < 0.05) {
+          const val = varGrads.value.dataSync()[0];
+          // eslint-disable-next-line no-console
+          console.debug('[DQN] optimize loss:', val.toFixed(6));
+        }
+      } finally {
+        // dispose gradient tensors
+        Object.values(varGrads.grads).forEach((t) => t.dispose());
+        if (varGrads.value) varGrads.value.dispose();
+      }
+
+      // periodically update target network weights from policy
+      policyRef.current._targetUpdateCounter += 1;
+      const TARGET_UPDATE_EVERY = 200;
+      if (policyRef.current._targetUpdateCounter % TARGET_UPDATE_EVERY === 0) {
+        const weights = policyRef.current.getWeights();
+        // setWeights copies values into target network
+        if (policyRef.current.target) policyRef.current.target.setWeights(weights);
+      }
     });
-
-    const target = torch.tensor(targetData, false, "gpu");
-
-    const diff = q.sub(target);
-    const loss = torch.mean(diff.mul(diff));
-    loss.backward();
-    optimizerRef.current.step();
-    optimizerRef.current.zero_grad();
   };
 
   const startTraining = useCallback(
@@ -282,6 +318,9 @@ export default function useDQN({ gridState, envStep, envReset }) {
         const avg = rewardHistoryRef.current.reduce((a, b) => a + b, 0) / rewardHistoryRef.current.length;
         setAvgReward(avg);
         setEpisode(ep + 1);
+        // log episode reward for debugging
+        // eslint-disable-next-line no-console
+        console.debug('[DQN] episode', ep + 1, 'reward:', episodeReward.toFixed(3), 'avg10:', avg.toFixed(3));
       }
 
       setTraining(false);

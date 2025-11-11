@@ -26,7 +26,7 @@ export default function useTableQLearning({ gridState, envStep, envReset } = {})
   const GAMMA = 0.99;
   const EPS_START = 1.0;
   const EPS_END = 0.05;
-  const EPS_DECAY = 500; // decay steps
+  const EPS_DECAY = 10000; // decay steps
 
   // initialize q-table when gridState changes
   useEffect(() => {

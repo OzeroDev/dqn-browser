@@ -277,7 +277,7 @@ function App() {
 
   return (
     <div className="h-screen w-screen bg-gray-900 text-white flex flex-col items-center">
-      <h1 className="text-3xl font-bold mt-6">DQN Examples (js-pytorch)</h1>
+      <h1 className="text-3xl font-bold mt-6">DQN Examples (TensorFlow.js)</h1>
 
       <div className="mt-4">
         <label className="mr-3 font-medium">Example:</label>
