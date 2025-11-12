@@ -42,7 +42,7 @@ function createCartPoleSim() {
   const tau = 0.02; // seconds between state updates
 
   const xThreshold = 2.4;
-  const thetaThresholdRadians = (45 * Math.PI) / 180;
+  const thetaThresholdRadians = (35 * Math.PI) / 180;
 
   let state = [0, 0, 0, 0]; // [x, xDot, theta, thetaDot]
   let steps = 0;
