@@ -24,9 +24,11 @@ function GridWorldDQNPane() {
     getQValues,
     exploreCount,
     exploitCount,
+    loadWeightsFromEpisode,
   } = useDQN({ gridState: state, envStep: step, envReset: reset });
 
   const [cellQGrid, setCellQGrid] = useState(null);
+  const [startEp, setStartEp] = useState(0);
 
   // compute Q-values for every valid cell whenever grid state or model changes
   useEffect(() => {
@@ -64,7 +66,7 @@ function GridWorldDQNPane() {
   }, [reset]);
 
   return (
-    <div className="flex flex-col items-center">
+    <div className="flex flex-col items-center pb-20">
       <h2 className="text-2xl font-semibold mt-4">GridWorld Deep Q</h2>
       <div className="mt-6">
         <GridWorldCanvas
@@ -77,7 +79,20 @@ function GridWorldDQNPane() {
           actionQGrid={cellQGrid}
         />
       </div>
-      <div className="mt-6 flex gap-3">
+      <div className="mt-6 flex gap-3 items-center">
+        <label className="mr-2">Start from weights:</label>
+        <select
+          className="px-3 py-2 bg-gray-800 border border-gray-700 rounded"
+          value={startEp}
+          onChange={(e) => setStartEp(Number(e.target.value))}
+          disabled={training}
+        >
+          <option value={0}>0 (default)</option>
+          <option value={50}>50</option>
+          <option value={100}>100</option>
+          <option value={150}>150</option>
+          <option value={200}>200</option>
+        </select>
         <button
           className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded"
           onClick={reset}
@@ -87,7 +102,7 @@ function GridWorldDQNPane() {
         </button>
         <button
           className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded"
-          onClick={() => startTraining({ episodes: 100 })}
+          onClick={() => startTraining({ episodes: 1000, startFromEpisode: startEp })}
           disabled={training}
         >
           Start Training
