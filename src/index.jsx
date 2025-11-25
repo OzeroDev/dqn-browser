@@ -12,6 +12,17 @@ import useCartPoleDQN from "./hooks/useCartPoleDQN.js";
 // GridWorld view pane for Deep Q (DQN)
 function GridWorldDQNPane() {
   const { state, reset, step } = useGridWorld({ gridSize: 6, cellSize: 72 });
+  const [hyperParams, setHyperParams] = useState({
+    gamma: 0.99,
+    batchSize: 64,
+    epsStart: 0.9,
+    epsEnd: 0.05,
+    epsDecay: 1000,
+    learningRate: 0.0005,
+    targetUpdateEvery: 200,
+    clipVal: 5.0,
+    memoryCapacity: 10000,
+  });
   const {
     startTraining,
     stopTraining,
@@ -24,7 +35,7 @@ function GridWorldDQNPane() {
     getQValues,
     exploreCount,
     exploitCount,
-  } = useDQN({ gridState: state, envStep: step, envReset: reset });
+  } = useDQN({ gridState: state, envStep: step, envReset: reset, hyperParams });
 
   const [cellQGrid, setCellQGrid] = useState(null);
 
@@ -76,6 +87,43 @@ function GridWorldDQNPane() {
           goal={state.goalPos}
           actionQGrid={cellQGrid}
         />
+      </div>
+      <div className="mt-6 w-full max-w-2xl bg-gray-800 border border-gray-700 rounded p-4">
+        <div className="text-lg font-medium mb-3">Hyperparameters</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm mb-1">Learning Rate: {hyperParams.learningRate.toFixed(5)}</label>
+            <input type="range" min={0.00001} max={0.01} step={0.00001} value={hyperParams.learningRate} onChange={(e) => setHyperParams({ ...hyperParams, learningRate: parseFloat(e.target.value) })} className="w-full" />
+          </div>
+          <div>
+            <label className="block text-sm mb-1">Gamma: {hyperParams.gamma.toFixed(3)}</label>
+            <input type="range" min={0.80} max={0.999} step={0.001} value={hyperParams.gamma} onChange={(e) => setHyperParams({ ...hyperParams, gamma: parseFloat(e.target.value) })} className="w-full" />
+          </div>
+          <div>
+            <label className="block text-sm mb-1">Eps Start: {hyperParams.epsStart.toFixed(2)}</label>
+            <input type="range" min={0.10} max={1.00} step={0.01} value={hyperParams.epsStart} onChange={(e) => setHyperParams({ ...hyperParams, epsStart: parseFloat(e.target.value) })} className="w-full" />
+          </div>
+          <div>
+            <label className="block text-sm mb-1">Eps End: {hyperParams.epsEnd.toFixed(2)}</label>
+            <input type="range" min={0.00} max={0.50} step={0.01} value={hyperParams.epsEnd} onChange={(e) => setHyperParams({ ...hyperParams, epsEnd: parseFloat(e.target.value) })} className="w-full" />
+          </div>
+          <div>
+            <label className="block text-sm mb-1">Eps Decay: {hyperParams.epsDecay}</label>
+            <input type="range" min={100} max={5000} step={50} value={hyperParams.epsDecay} onChange={(e) => setHyperParams({ ...hyperParams, epsDecay: parseInt(e.target.value, 10) })} className="w-full" />
+          </div>
+          <div>
+            <label className="block text-sm mb-1">Batch Size: {hyperParams.batchSize}</label>
+            <input type="range" min={16} max={256} step={16} value={hyperParams.batchSize} onChange={(e) => setHyperParams({ ...hyperParams, batchSize: parseInt(e.target.value, 10) })} className="w-full" />
+          </div>
+          <div>
+            <label className="block text-sm mb-1">Target Update Every: {hyperParams.targetUpdateEvery}</label>
+            <input type="range" min={50} max={1000} step={10} value={hyperParams.targetUpdateEvery} onChange={(e) => setHyperParams({ ...hyperParams, targetUpdateEvery: parseInt(e.target.value, 10) })} className="w-full" />
+          </div>
+          <div>
+            <label className="block text-sm mb-1">Clip Value: {hyperParams.clipVal.toFixed(1)}</label>
+            <input type="range" min={0.1} max={10} step={0.1} value={hyperParams.clipVal} onChange={(e) => setHyperParams({ ...hyperParams, clipVal: parseFloat(e.target.value) })} className="w-full" />
+          </div>
+        </div>
       </div>
       <div className="mt-6 flex gap-3">
         <button

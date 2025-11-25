@@ -30,7 +30,7 @@ class ReplayMemory {
   }
 }
 
-export default function useDQN({ gridState, envStep, envReset }) {
+export default function useDQN({ gridState, envStep, envReset, hyperParams }) {
   const [training, setTraining] = useState(false);
   const [episode, setEpisode] = useState(0);
   const [totalSteps, setTotalSteps] = useState(0);
@@ -42,16 +42,20 @@ export default function useDQN({ gridState, envStep, envReset }) {
 
   const policyRef = useRef(null);
   const optimizerRef = useRef(null);
-  const memoryRef = useRef(new ReplayMemory(10000));
+  const memoryRef = useRef(new ReplayMemory((hyperParams && hyperParams.memoryCapacity) || 10000));
   const stopRef = useRef(false);
   const rewardHistoryRef = useRef([]);
+  const gammaRef = useRef((hyperParams && hyperParams.gamma) || 0.99);
+  const batchSizeRef = useRef((hyperParams && hyperParams.batchSize) || 64);
+  const epsStartRef = useRef((hyperParams && hyperParams.epsStart) || 0.9);
+  const epsEndRef = useRef((hyperParams && hyperParams.epsEnd) || 0.05);
+  const epsDecayRef = useRef((hyperParams && hyperParams.epsDecay) || 1000);
+  const learningRateRef = useRef((hyperParams && hyperParams.learningRate) || 5e-4);
+  const targetUpdateEveryRef = useRef((hyperParams && hyperParams.targetUpdateEvery) || 200);
+  const clipValRef = useRef((hyperParams && hyperParams.clipVal) || 5.0);
+  const memoryCapacityRef = useRef((hyperParams && hyperParams.memoryCapacity) || 10000);
 
   const nActions = 4;
-  const GAMMA = 0.99;
-  const BATCH_SIZE = 64;
-  const EPS_START = 0.9;
-  const EPS_END = 0.05;
-  const EPS_DECAY = 1000;
 
   // Calculate feature size based on grid
   const gridSize = gridState?.gridSize || 6;
@@ -83,8 +87,7 @@ export default function useDQN({ gridState, envStep, envReset }) {
 
   useEffect(() => {
     policyRef.current = createDQNModel(nObs, nActions);
-    // smaller LR to reduce instability
-    optimizerRef.current = tf.train.adam(5e-4);
+    optimizerRef.current = tf.train.adam(learningRateRef.current);
 
     // create a target network for stable Q-learning
     // target network starts with same weights as policy
@@ -96,12 +99,31 @@ export default function useDQN({ gridState, envStep, envReset }) {
 
     // warm up with a single prediction to ensure weights are created
     const zeroRow = Array(nObs).fill(0);
-    const zeroBatch = Array.from({ length: BATCH_SIZE }, () => [...zeroRow]);
+    const zeroBatch = Array.from({ length: batchSizeRef.current }, () => [...zeroRow]);
     tf.tidy(() => {
       const t = tf.tensor2d(zeroBatch);
       policyRef.current.predict(t);
     });
   }, [nObs]);
+
+  useEffect(() => {
+    const cfg = hyperParams || {};
+    if (cfg.gamma != null) gammaRef.current = cfg.gamma;
+    if (cfg.batchSize != null) batchSizeRef.current = Math.max(1, Math.floor(cfg.batchSize));
+    if (cfg.epsStart != null) epsStartRef.current = cfg.epsStart;
+    if (cfg.epsEnd != null) epsEndRef.current = cfg.epsEnd;
+    if (cfg.epsDecay != null) epsDecayRef.current = Math.max(1, Math.floor(cfg.epsDecay));
+    if (cfg.clipVal != null) clipValRef.current = cfg.clipVal;
+    if (cfg.targetUpdateEvery != null) targetUpdateEveryRef.current = Math.max(1, Math.floor(cfg.targetUpdateEvery));
+    if (cfg.learningRate != null) {
+      learningRateRef.current = cfg.learningRate;
+      optimizerRef.current = tf.train.adam(learningRateRef.current);
+    }
+    if (cfg.memoryCapacity != null) {
+      memoryCapacityRef.current = Math.max(1, Math.floor(cfg.memoryCapacity));
+      memoryRef.current = new ReplayMemory(memoryCapacityRef.current);
+    }
+  }, [hyperParams]);
 
   // Create rich feature representation from raw position
   const createFeatures = (rawPos) => {
@@ -130,7 +152,7 @@ export default function useDQN({ gridState, envStep, envReset }) {
   };
 
   const computeEpsilon = (t) =>
-    EPS_END + (EPS_START - EPS_END) * Math.exp(-1.0 * t / EPS_DECAY);
+    epsEndRef.current + (epsStartRef.current - epsEndRef.current) * Math.exp(-1.0 * t / epsDecayRef.current);
 
   // returns { action, greedy }
   const selectAction = (stateArr, eps) => {
@@ -170,13 +192,14 @@ export default function useDQN({ gridState, envStep, envReset }) {
   }, []);
 
   const optimizeModel = () => {
-    if (memoryRef.current.length < BATCH_SIZE) return;
+    const K = batchSizeRef.current;
+    if (memoryRef.current.length < K) return;
 
-    const batch = memoryRef.current.sample(BATCH_SIZE);
+    const batch = memoryRef.current.sample(K);
 
     const statesBatch = [];
     const nextStatesBatch = [];
-    for (let i = 0; i < BATCH_SIZE; i++) {
+    for (let i = 0; i < K; i++) {
       statesBatch.push(batch[i].state);
       nextStatesBatch.push(batch[i].nextState);
     }
@@ -197,7 +220,7 @@ export default function useDQN({ gridState, envStep, envReset }) {
       const nextQMax = nextQArr.map((row) => Math.max(...row));
 
       const targetData = qPredArr.map((row, i) => {
-        const tdTarget = batch[i].reward + (batch[i].done ? 0 : GAMMA * nextQMax[i]);
+        const tdTarget = batch[i].reward + (batch[i].done ? 0 : gammaRef.current * nextQMax[i]);
         const updated = row.slice();
         updated[batch[i].action] = tdTarget;
         return updated;
@@ -214,10 +237,9 @@ export default function useDQN({ gridState, envStep, envReset }) {
 
       try {
         // clip gradients to avoid explosions
-        const CLIP_VAL = 5.0;
         const clippedGrads = {};
         Object.keys(varGrads.grads).forEach((k) => {
-          clippedGrads[k] = tf.clipByValue(varGrads.grads[k], -CLIP_VAL, CLIP_VAL);
+          clippedGrads[k] = tf.clipByValue(varGrads.grads[k], -clipValRef.current, clipValRef.current);
         });
 
         optimizerRef.current.applyGradients(clippedGrads);
@@ -236,10 +258,8 @@ export default function useDQN({ gridState, envStep, envReset }) {
 
       // periodically update target network weights from policy
       policyRef.current._targetUpdateCounter += 1;
-      const TARGET_UPDATE_EVERY = 200;
-      if (policyRef.current._targetUpdateCounter % TARGET_UPDATE_EVERY === 0) {
+      if (policyRef.current._targetUpdateCounter % targetUpdateEveryRef.current === 0) {
         const weights = policyRef.current.getWeights();
-        // setWeights copies values into target network
         if (policyRef.current.target) policyRef.current.target.setWeights(weights);
       }
     });
