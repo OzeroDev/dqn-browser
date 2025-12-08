@@ -64,6 +64,8 @@ function InteractivePane() {
 
   const [sensorError, setSensorError] = useState("")
 
+  const [stopped, setStopped] = useState(false);
+
   // Update hiddenSizes when numHidden changes
   useEffect(() => {
     setHiddenSizes((prev) => {
@@ -192,17 +194,38 @@ function InteractivePane() {
   };
 
   const SensorButton = ({ title, selected, onClick, type }) => {
+    const [showTooltip, setShowTooltip] = useState(false);
+    const tooltipText = (() => {
+      switch (type) {
+        case "diagonal": return "Detects diagonal boundaries and obstacles (does not detect pits)";
+        case "straight": return "Detects cardinal boundaries and obstacles (does not detect pits)";
+        case "goal": return "Provides the agent's x and y offset from the goal";
+        case "pit": return "Measures the Euclidean distance to the nearest pit";
+        default: return title;
+      }
+    })();
+
     return (
-      <button
-        onClick={() => {
-          onClick();
-          setSensorError("");
-        }}
-        className={`cursor-pointer flex items-center gap-2 px-3 py-2 rounded border border-slate-700 bg-slate-800 hover:bg-slate-700 transition ${selected ? "" : "opacity-40"}`}
-      >
-        <SensorPreview type={type} />
-        <span className="text-xs">{title}</span>
-      </button>
+      <span className="relative inline-block">
+        <button
+          onClick={() => {
+            onClick();
+            setSensorError("");
+          }}
+          onMouseEnter={() => setShowTooltip(true)}
+          onMouseLeave={() => setShowTooltip(false)}
+          className={`cursor-pointer flex items-center gap-2 px-3 py-2 rounded border border-slate-700 bg-slate-800 hover:bg-slate-700 transition ${selected ? "" : "opacity-40"}`}
+        >
+          <SensorPreview type={type} />
+          <span className="text-xs">{title}</span>
+        </button>
+        {showTooltip && (
+          <span className="absolute z-50 bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-slate-950 text-slate-200 text-xs rounded border border-slate-700 shadow-lg whitespace-nowrap">
+            {tooltipText}
+            <span className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-1 border-4 border-transparent border-t-slate-950"></span>
+          </span>
+        )}
+      </span>
     );
   };
 
@@ -214,7 +237,7 @@ function InteractivePane() {
       </header>
 
       <div
-        className={`flex flex-col items-center mb-4 mt-4 p-5 pt-2 pb-4 rounded-lg bg-slate-900 border border-slate-700 ${training ? 'opacity-50 pointer-events-none' : ''}`}
+        className={`flex flex-col items-center mb-4 mt-4 p-5 pt-2 pb-0 rounded-lg bg-slate-900 border border-slate-700 ${training ? 'opacity-50 pointer-events-none' : ''}`}
         aria-disabled={training}
       >
         <header className="flex flex-col gap-2">
@@ -224,7 +247,7 @@ function InteractivePane() {
           <h4 className="text-lg font-medium">Neural Network Architecture:</h4>
         </div>
         {/* Hidden layer controls */}
-        <div className="flex gap-4 items-center flex-wrap">
+        <div className="flex gap-2 items-center flex-wrap">
           <label className="text-gray-300 text-sm">Number of Layers:</label>
           <select
             value={numHidden}
@@ -239,7 +262,7 @@ function InteractivePane() {
           {hiddenSizes.map((size, idx) => {
             const sizeOptions = [8, 16, 32, 64, 128];
             return (
-              <div key={idx} className="flex items-center gap-1">
+              <div key={idx} className="flex items-center gap-2">
                 <label className="text-gray-300 text-xs">Layer {idx+1}:</label>
                 <select
                   value={size}
@@ -312,17 +335,17 @@ function InteractivePane() {
 
         
         <div className="w-full my-2">
-          <h4 className="text-lg font-medium">Agent Sensors:</h4>
+          <h4 className="text-lg font-medium">Agent Observables:</h4>
         </div>
         <div className="flex gap-3">
           <SensorButton
-            title="Diagonal Sensors"
+            title="Diagonal LiDAR"
             selected={diagonalSensors}
             onClick={() => setDiagonalSensors(s => !s)}
             type="diagonal"
           />
           <SensorButton
-            title="Straight Sensors"
+            title="Cardinal LiDAR"
             selected={straightSensors}
             onClick={() => setStraightSensors(s => !s)}
             type="straight"
@@ -340,30 +363,46 @@ function InteractivePane() {
             type="pit"
           />
         </div>
+        
+        <div className="w-full mt-4">
+          <h4 className="text-lg font-medium">Q-Network Preview:</h4>
+        </div>
+        {/* Neural Network Panel - Below the grids */}
+        <div className="flex flex-col items-center w-[960px]">
+          <div className="w-full flex justify-center">
+            <NNVisual hiddenSizes={hiddenSizes} numHidden={numHidden} width={960} minHeight={600} sensorFlags={{ diagonalSensors, straightSensors, goalLocalication, pitDistance }} />
+          </div>
+        </div>
+      </div>
+
         {sensorError && (
-          <div className=" text-red-400 text-sm mt-2">
+          <div className=" text-red-400 text-sm mb-3">
             {sensorError}
           </div>
         )}
-      </div>
-
       <div className="flex gap-3 mb-8">
-          <button
-            className="cursor-pointer px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded"
-            onClick={reset}
-            disabled={training}
-          >
-            Restart Training
-          </button>
+          {stopped && (
+            <button
+              className="cursor-pointer px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded"
+              onClick={() => {
+                reset();
+                setStopped(false);
+              }}
+              disabled={training}
+            >
+              Reset
+            </button>
+          )}
           {!training ? (
           <button
             className="cursor-pointer px-4 py-2 bg-green-600 hover:bg-green-700 rounded"
             onClick={() => {
               if (!diagonalSensors && !straightSensors && !goalLocalication && !pitDistance) {
-                setSensorError("Please select at least one agent sensor before starting training.");
+                setSensorError("Please select at least one agent observable before starting training.");
                 return;
               }
               setSensorError("");
+              setStopped(false);
               startTraining({ episodes: 100 });
             }}
             disabled={training}
@@ -373,7 +412,10 @@ function InteractivePane() {
           ) : (
           <button
             className="cursor-pointer px-4 py-2 bg-red-600 hover:bg-red-700 rounded"
-            onClick={stopTraining}
+            onClick={() => {
+              stopTraining();
+              setStopped(true);
+            }}
             disabled={!training}
           >
             Stop Training
@@ -443,14 +485,6 @@ function InteractivePane() {
         <div>Last Episode Reward: {lastReward.toFixed(3)}</div>
         <div>Epsilon: {epsilon.toFixed(3)}</div>
         <div>Avg Reward (10): {avgReward.toFixed(3)}</div>
-      </div>
-
-      {/* Neural Network Panel - Below the grids */}
-      <div className="flex flex-col items-center w-full">
-        <h3 className="text-2xl font-semibold tb-2">Q Network</h3>
-        <div className="w-full flex justify-center">
-          <NNVisual model={model} refreshKey={totalSteps} width={1400} height={600} />
-        </div>
       </div>
     </div>
   );
