@@ -197,6 +197,55 @@ export default function DQNExplain() {
           </section>
 
           <section className="p-5 rounded-lg bg-slate-800/70 border border-slate-700">
+            <h3 className="text-2xl font-semibold mb-4">Hyperparameters Explained</h3>
+            <p className="text-slate-300 mb-4">
+              These three hyperparameters control different aspects of the learning process. Tuning them properly
+              is crucial for stable and efficient learning.
+            </p>
+            <div className="space-y-4">
+              <div id="learning-rate-section" className="p-4 rounded bg-slate-900/70 border border-slate-800 transition-all duration-500">
+                <h4 className="text-lg font-semibold text-slate-50 mb-2">Learning Rate (α)</h4>
+                <p className="text-sm text-slate-200 mb-3">
+                  The learning rate determines how much the neural network weights change with each update. Think of it
+                  as the step size when climbing down a hill toward better performance.
+                </p>
+                <ul className="text-sm text-slate-200 space-y-2 ml-4">
+                  <li><span className="text-blue-400">•</span> <strong>Too high:</strong> Training becomes unstable, weights oscillate wildly, and the agent may never converge to a good policy.</li>
+                  <li><span className="text-blue-400">•</span> <strong>Too low:</strong> Learning is very slow, requiring many more episodes to reach good performance.</li>
+                  <li><span className="text-blue-400">•</span> <strong>Typical range:</strong> 0.0001 to 0.001 for DQN. Start with 0.0005 and adjust based on training stability.</li>
+                </ul>
+              </div>
+
+              <div id="epsilon-decay-section" className="p-4 rounded bg-slate-900/70 border border-slate-800 transition-all duration-500">
+                <h4 className="text-lg font-semibold text-slate-50 mb-2">Epsilon Decay</h4>
+                <p className="text-sm text-slate-200 mb-3">
+                  Controls how quickly the agent transitions from exploration (trying random actions) to exploitation
+                  (using learned knowledge). The epsilon value starts at 1.0 (100% random) and decays exponentially.
+                </p>
+                <ul className="text-sm text-slate-200 space-y-2 ml-4">
+                  <li><span className="text-blue-400">•</span> <strong>Low decay (e.g., 500):</strong> Fast transition to exploitation. Good when you want quick results but risk missing better strategies.</li>
+                  <li><span className="text-blue-400">•</span> <strong>High decay (e.g., 5000):</strong> Longer exploration phase. Better for complex environments where thorough exploration is needed.</li>
+                  <li><span className="text-blue-400">•</span> <strong>Formula:</strong> epsilon = epsilon_min + (1.0 - epsilon_min) * exp(-step / decay). The decay parameter is the number of steps for epsilon to drop by ~63%.</li>
+                </ul>
+              </div>
+
+              <div id="gamma-section" className="p-4 rounded bg-slate-900/70 border border-slate-800 transition-all duration-500">
+                <h4 className="text-lg font-semibold text-slate-50 mb-2">Gamma (γ) - Discount Factor</h4>
+                <p className="text-sm text-slate-200 mb-3">
+                  The discount factor determines how much the agent values future rewards compared to immediate ones.
+                  It appears in the Bellman equation: Q(s,a) = r + γ * max Q(s',a').
+                </p>
+                <ul className="text-sm text-slate-200 space-y-2 ml-4">
+                  <li><span className="text-blue-400">•</span> <strong>γ = 0:</strong> Only immediate rewards matter (myopic agent).</li>
+                  <li><span className="text-blue-400">•</span> <strong>γ = 1:</strong> All future rewards weighted equally (infinite horizon).</li>
+                  <li><span className="text-blue-400">•</span> <strong>Typical values:</strong> 0.95-0.99 for episodic tasks. Higher values (0.99) make the agent more patient and willing to take longer paths for better rewards.</li>
+                  <li><span className="text-blue-400">•</span> <strong>Example:</strong> With γ=0.99, a reward 100 steps away is worth 0.99^100 ≈ 0.366 of its face value.</li>
+                </ul>
+              </div>
+            </div>
+          </section>
+
+          <section className="p-5 rounded-lg bg-slate-800/70 border border-slate-700">
             <h3 className="text-xl font-semibold mb-3">Summary</h3>
             <p className="text-slate-200 text-sm leading-6 mb-3">
               Deep Q-learning is the same Bellman idea you meet in tabular Q-learning—immediate reward plus discounted

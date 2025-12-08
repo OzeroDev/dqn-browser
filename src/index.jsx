@@ -1,5 +1,5 @@
 // Top-level imports and new panes
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
 
@@ -11,6 +11,40 @@ import CartPoleCanvas from "./components/CartPoleCanvas.jsx";
 import useCartPoleDQN from "./hooks/useCartPoleDQN.js";
 import NNVisual from "./components/NNVisual.jsx";
 import DQNExplain from "./components/DQNExplain.jsx";
+
+// Tooltip component for hyperparameters
+function HyperparamLabel({ children, tooltip, targetId }) {
+  const [showTooltip, setShowTooltip] = useState(false);
+  
+  const handleClick = () => {
+    const element = document.getElementById(targetId);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Add a brief highlight effect
+      element.classList.add('highlight-flash');
+      setTimeout(() => element.classList.remove('highlight-flash'), 2000);
+    }
+  };
+  
+  return (
+    <span className="relative inline-block">
+      <span
+        className="cursor-pointer hover:text-blue-400 transition-colors underline decoration-dotted"
+        onMouseEnter={() => setShowTooltip(true)}
+        onMouseLeave={() => setShowTooltip(false)}
+        onClick={handleClick}
+      >
+        {children}
+      </span>
+      {showTooltip && (
+        <span className="absolute z-50 bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-slate-950 text-slate-200 text-xs rounded border border-slate-700 shadow-lg whitespace-nowrap">
+          {tooltip}
+          <span className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-1 border-4 border-transparent border-t-slate-950"></span>
+        </span>
+      )}
+    </span>
+  );
+}
 
 // Interactive view pane
 function InteractivePane() {
@@ -160,7 +194,11 @@ function InteractivePane() {
         </div>
         {/* Hyperparameter controls */}
         <div className="flex gap-4 items-center mb-4 flex-wrap">
-          <label className="text-gray-300 text-sm">Learning Rate:</label>
+          <label className="text-gray-300 text-sm">
+            <HyperparamLabel tooltip="Step size for network weight updates" targetId="learning-rate-section">
+              Learning Rate
+            </HyperparamLabel>:
+          </label>
           <select
             value={learningRate}
             onChange={e => setLearningRate(Number(e.target.value))}
@@ -171,7 +209,11 @@ function InteractivePane() {
               <option key={val} value={val}>{val}</option>
             ))}
           </select>
-          <label className="text-gray-300 text-sm">Epsilon Decay:</label>
+          <label className="text-gray-300 text-sm">
+            <HyperparamLabel tooltip="How quickly exploration decreases" targetId="epsilon-decay-section">
+              Epsilon Decay
+            </HyperparamLabel>:
+          </label>
           <select
             value={epsilonDecay}
             onChange={e => setEpsilonDecay(Number(e.target.value))}
@@ -182,7 +224,11 @@ function InteractivePane() {
               <option key={val} value={val}>{val}</option>
             ))}
           </select>
-          <label className="text-gray-300 text-sm">Gamma:</label>
+          <label className="text-gray-300 text-sm">
+            <HyperparamLabel tooltip="Discount factor for future rewards" targetId="gamma-section">
+              Gamma
+            </HyperparamLabel>:
+          </label>
           <select
             value={gamma}
             onChange={e => setGamma(Number(e.target.value))}
