@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as tf from '@tensorflow/tfjs';
 
-function createDQNModel(nObs, nActions, layerSize = 128) {
+function createDQNModel(nObs, nActions, hiddenLayers = [128, 128]) {
   const model = tf.sequential();
-  model.add(tf.layers.dense({ units: layerSize, activation: 'relu', inputShape: [nObs] }));
-  model.add(tf.layers.dense({ units: layerSize, activation: 'relu' }));
+  if (!Array.isArray(hiddenLayers) || hiddenLayers.length === 0) {
+    hiddenLayers = [128, 128];
+  }
+  // First layer with inputShape
+  model.add(tf.layers.dense({ units: hiddenLayers[0], activation: 'relu', inputShape: [nObs] }));
+  // Additional hidden layers
+  for (let i = 1; i < hiddenLayers.length; i++) {
+    model.add(tf.layers.dense({ units: hiddenLayers[i], activation: 'relu' }));
+  }
+  // Output layer
   model.add(tf.layers.dense({ units: nActions }));
   return model;
 }
@@ -30,7 +38,7 @@ class ReplayMemory {
   }
 }
 
-export default function useDQN({ gridState, envStep, envReset }) {
+export default function useDQN({ gridState, envStep, envReset, hiddenLayers = [128, 128] }) {
   const [training, setTraining] = useState(false);
   const [episode, setEpisode] = useState(0);
   const [totalSteps, setTotalSteps] = useState(0);
@@ -82,13 +90,13 @@ export default function useDQN({ gridState, envStep, envReset }) {
   }, [gridState]);
 
   useEffect(() => {
-    policyRef.current = createDQNModel(nObs, nActions);
+    policyRef.current = createDQNModel(nObs, nActions, hiddenLayers);
     // smaller LR to reduce instability
     optimizerRef.current = tf.train.adam(5e-4);
 
     // create a target network for stable Q-learning
     // target network starts with same weights as policy
-    const target = createDQNModel(nObs, nActions);
+    const target = createDQNModel(nObs, nActions, hiddenLayers);
     target.setWeights(policyRef.current.getWeights());
     policyRef.current.target = target;
     // step counter for periodic target updates
@@ -101,7 +109,7 @@ export default function useDQN({ gridState, envStep, envReset }) {
       const t = tf.tensor2d(zeroBatch);
       policyRef.current.predict(t);
     });
-  }, [nObs]);
+  }, [nObs, hiddenLayers]);
 
   // Create rich feature representation from raw position
   const createFeatures = (rawPos) => {
@@ -364,7 +372,7 @@ export default function useDQN({ gridState, envStep, envReset }) {
   4. right
 */
 
-export function useNewDQN({ gridState, envStep, envReset }) {
+export function useNewDQN({ gridState, envStep, envReset, hiddenLayers = [64, 64] }) {
   const [training, setTraining] = useState(false);
   const [episode, setEpisode] = useState(0);
   const [totalSteps, setTotalSteps] = useState(0);
@@ -416,13 +424,13 @@ export function useNewDQN({ gridState, envStep, envReset }) {
   }, [gridState]);
 
   useEffect(() => {
-    policyRef.current = createDQNModel(nObs, nActions, 64);
+    policyRef.current = createDQNModel(nObs, nActions, hiddenLayers);
     // smaller LR to reduce instability
     optimizerRef.current = tf.train.adam(5e-4);
 
     // create a target network for stable Q-learning
     // target network starts with same weights as policy
-    const target = createDQNModel(nObs, nActions, 64);
+    const target = createDQNModel(nObs, nActions, hiddenLayers);
     target.setWeights(policyRef.current.getWeights());
     policyRef.current.target = target;
     // step counter for periodic target updates
@@ -435,7 +443,7 @@ export function useNewDQN({ gridState, envStep, envReset }) {
       const t = tf.tensor2d(zeroBatch);
       policyRef.current.predict(t);
     });
-  }, [nObs]);
+  }, [nObs, hiddenLayers]);
 
   
 

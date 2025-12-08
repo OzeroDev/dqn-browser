@@ -15,6 +15,21 @@ import DQNExplain from "./components/DQNExplain.jsx";
 // Interactive view pane
 function InteractivePane() {
   const { state, reset, step } = useGridWorld({ gridSize: 6, cellSize: 72 });
+  // Hidden layer config state
+  const [numHidden, setNumHidden] = useState(2);
+  const [hiddenSizes, setHiddenSizes] = useState([64, 64]);
+  // Update hiddenSizes when numHidden changes
+  useEffect(() => {
+    setHiddenSizes((prev) => {
+      if (numHidden > prev.length) {
+        return [...prev, ...Array(numHidden - prev.length).fill(64)];
+      } else if (numHidden < prev.length) {
+        return prev.slice(0, numHidden);
+      }
+      return prev;
+    });
+  }, [numHidden]);
+
   const {
     startTraining,
     stopTraining,
@@ -28,7 +43,7 @@ function InteractivePane() {
     exploreCount,
     exploitCount,
     model,
-  } = useNewDQN({ gridState: state, envStep: step, envReset: reset });
+  } = useNewDQN({ gridState: state, envStep: step, envReset: reset, hiddenLayers: hiddenSizes });
 
   const [cellQGrid, setCellQGrid] = useState(null);
 
@@ -95,6 +110,40 @@ function InteractivePane() {
           >
             Stop
           </button>
+        </div>
+        {/* Hidden layer controls */}
+        <div className="flex gap-4 items-center mb-4 flex-wrap">
+          <label className="text-gray-300 text-sm">Number of Layers:</label>
+          <select
+            value={numHidden}
+            onChange={e => setNumHidden(Number(e.target.value))}
+            disabled={training}
+            className="bg-slate-800 text-white px-2 py-1 rounded"
+          >
+            {[1, 2, 3].map(n => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+          {hiddenSizes.map((size, idx) => {
+            const sizeOptions = [8, 16, 32, 64, 128];
+            return (
+              <div key={idx} className="flex items-center gap-1">
+                <label className="text-gray-300 text-xs">Layer {idx+1}:</label>
+                <select
+                  value={size}
+                  disabled={training}
+                  onChange={e => {
+                    setHiddenSizes(sizes => sizes.map((s, i) => i === idx ? Number(e.target.value) : s));
+                  }}
+                  className="bg-slate-800 text-white px-2 py-1 rounded border border-slate-700"
+                >
+                  {sizeOptions.map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
+            );
+          })}
         </div>
         <div className="flex gap-6 text-gray-300 text-sm">
           <div>Episode: {episode}</div>
