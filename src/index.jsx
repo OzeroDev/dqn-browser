@@ -10,6 +10,7 @@ import useTableQLearning from "./hooks/useTableQLearning.js";
 import CartPoleCanvas from "./components/CartPoleCanvas.jsx";
 import useCartPoleDQN from "./hooks/useCartPoleDQN.js";
 import NNVisual from "./components/NNVisual.jsx";
+import DQNExplain from "./components/DQNExplain.jsx";
 
 // Interactive view pane
 function InteractivePane() {
@@ -124,8 +125,12 @@ function InteractivePane() {
 
 
 function App() {
-
-  return <InteractivePane />;
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100">
+      <InteractivePane />
+      <DQNExplain />
+    </div>
+  );
 }
 
 const root = createRoot(document.getElementById("root"));
