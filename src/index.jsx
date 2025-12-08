@@ -1,5 +1,5 @@
 // Top-level imports and new panes
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
 
@@ -57,6 +57,13 @@ function InteractivePane() {
   const [epsilonDecay, setEpsilonDecay] = useState(1000);
   const [gamma, setGamma] = useState(0.99);
 
+  const [diagonalSensors, setDiagonalSensors] = useState(true)
+  const [straightSensors, setStraightSensors] = useState(true)
+  const [goalLocalication, setGoalLocalication] = useState(true)
+  const [pitDistance, setPitDistance] = useState(true)
+
+  const [sensorError, setSensorError] = useState("")
+
   // Update hiddenSizes when numHidden changes
   useEffect(() => {
     setHiddenSizes((prev) => {
@@ -89,7 +96,8 @@ function InteractivePane() {
     hiddenLayers: hiddenSizes,
     learningRate,
     epsilonDecay,
-    gamma
+    gamma,
+    sensorFlags: { diagonalSensors, straightSensors, goalLocalication, pitDistance }
   });
 
   const [cellQGrid, setCellQGrid] = useState(null);
@@ -131,41 +139,98 @@ function InteractivePane() {
     reset();
   }, [reset]);
 
+  const SensorPreview = ({ type }) => {
+    const size = 60;
+    const grid = 3;
+    const cell = size / grid;
+    const cx = 1.5 * cell;
+    const cy = 1.5 * cell;
+    const lines = (() => {
+      if (type === "diagonal") {
+        const dirs = [[-1,-1],[1,-1],[1,1],[-1,1]];
+        return dirs.map((d, i) => (
+          <line key={i} x1={cx} y1={cy} x2={cx + d[0]*cell} y2={cy + d[1]*cell} stroke="rgb(255,255,255)" strokeWidth={2} />
+        ));
+      }
+      if (type === "straight") {
+        const dirs = [[0,-1],[1,0],[0,1],[-1,0]];
+        return dirs.map((d, i) => (
+          <line key={i} x1={cx} y1={cy} x2={cx + d[0]*cell} y2={cy + d[1]*cell} stroke="rgb(255,255,255)" strokeWidth={2} />
+        ));
+      }
+      if (type === "goal") {
+        return (
+          <line x1={cx} y1={cy} x2={2.5*cell} y2={0.5*cell} stroke="rgba(90,200,90,0.7)" strokeWidth={1} />
+        );
+      }
+      if (type === "pit") {
+        return (
+          <circle cx={cx} cy={cy} r={Math.sqrt(2)*cell} fill="none" stroke="rgba(255,0,0,0.7)" strokeWidth={2} />
+        );
+      }
+      return null;
+    })();
+    return (
+      <svg width={size} height={size} className="rounded border border-slate-700 w-[60px] h-[60px]">
+        <rect x={0} y={0} width={size} height={size} fill="#0f172a" />
+        {Array.from({ length: grid + 1 }).map((_, i) => (
+          <line key={`h-${i}`} x1={0} y1={i*cell} x2={size} y2={i*cell} stroke="rgba(255,255,255,0.15)" />
+        ))}
+        {Array.from({ length: grid + 1 }).map((_, i) => (
+          <line key={`v-${i}`} x1={i*cell} y1={0} x2={i*cell} y2={size} stroke="rgba(255,255,255,0.15)" />
+        ))}
+        <circle cx={cx} cy={cy} r={cell*0.3} fill="rgb(66,135,245)" />
+        {lines}
+        {type === "goal" && (
+          <rect x={2*cell + cell*0.25} y={0*cell + cell*0.25} width={cell*0.5} height={cell*0.5} fill="rgba(90,200,90,0.6)" />
+        )}
+        {type === "pit" && (
+          <rect x={0*cell + cell*0.25} y={2*cell + cell*0.25} width={cell*0.5} height={cell*0.5} fill="rgba(255,0,0,0.6)" />
+        )}
+      </svg>
+    );
+  };
+
+  const SensorButton = ({ title, selected, onClick, type }) => {
+    return (
+      <button
+        onClick={() => {
+          onClick();
+          setSensorError("");
+        }}
+        className={`cursor-pointer flex items-center gap-2 px-3 py-2 rounded border border-slate-700 bg-slate-800 hover:bg-slate-700 transition ${selected ? "" : "opacity-40"}`}
+      >
+        <SensorPreview type={type} />
+        <span className="text-xs">{title}</span>
+      </button>
+    );
+  };
+
   return (
     <div className="flex flex-col overflow-hidden w-full h-full items-center p-8">
       {/* Top Control Panel */}
-      <div className="flex flex-col items-center mb-8">
-        <div className="flex gap-3 mb-4">
-          <button
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded"
-            onClick={reset}
-            disabled={training}
-          >
-            Reset
-          </button>
-          <button
-            className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded"
-            onClick={() => startTraining({ episodes: 100 })}
-            disabled={training}
-          >
-            Start Training
-          </button>
-          <button
-            className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded"
-            onClick={stopTraining}
-            disabled={!training}
-          >
-            Stop
-          </button>
+      <header className="flex flex-col gap-2 mb-4">
+        <h2 className="text-3xl font-bold">Deep Q-Network Playground: Gridworld</h2>
+      </header>
+
+      <div
+        className={`flex flex-col items-center mb-4 mt-4 p-5 pt-2 pb-4 rounded-lg bg-slate-900 border border-slate-700 ${training ? 'opacity-50 pointer-events-none' : ''}`}
+        aria-disabled={training}
+      >
+        <header className="flex flex-col gap-2">
+          <h4 className="text-2xl font-bold w-full text-start">Control Panel</h4>
+        </header>
+        <div className="w-full my-2">
+          <h4 className="text-lg font-medium">Neural Network Architecture:</h4>
         </div>
         {/* Hidden layer controls */}
-        <div className="flex gap-4 items-center mb-4 flex-wrap">
+        <div className="flex gap-4 items-center flex-wrap">
           <label className="text-gray-300 text-sm">Number of Layers:</label>
           <select
             value={numHidden}
             onChange={e => setNumHidden(Number(e.target.value))}
             disabled={training}
-            className="bg-slate-800 text-white px-2 py-1 rounded"
+            className="cursor-pointer bg-slate-800 text-white px-2 py-1 rounded"
           >
             {[1, 2, 3].map(n => (
               <option key={n} value={n}>{n}</option>
@@ -182,7 +247,7 @@ function InteractivePane() {
                   onChange={e => {
                     setHiddenSizes(sizes => sizes.map((s, i) => i === idx ? Number(e.target.value) : s));
                   }}
-                  className="bg-slate-800 text-white px-2 py-1 rounded border border-slate-700"
+                  className="cursor-pointer bg-slate-800 text-white px-2 py-1 rounded border border-slate-700"
                 >
                   {sizeOptions.map(opt => (
                     <option key={opt} value={opt}>{opt}</option>
@@ -192,8 +257,12 @@ function InteractivePane() {
             );
           })}
         </div>
+
         {/* Hyperparameter controls */}
-        <div className="flex gap-4 items-center mb-4 flex-wrap">
+        <div className="w-full my-2">
+          <h4 className="text-lg font-medium">Hyperparameters:</h4>
+        </div>
+        <div className="flex gap-4 items-center flex-wrap">
           <label className="text-gray-300 text-sm">
             <HyperparamLabel tooltip="Step size for network weight updates" targetId="learning-rate-section">
               Learning Rate
@@ -203,7 +272,7 @@ function InteractivePane() {
             value={learningRate}
             onChange={e => setLearningRate(Number(e.target.value))}
             disabled={training}
-            className="bg-slate-800 text-white px-2 py-1 rounded"
+            className="cursor-pointer bg-slate-800 text-white px-2 py-1 rounded"
           >
             {[0.00001, 0.00005, 0.0001, 0.0005, 0.001].map(val => (
               <option key={val} value={val}>{val}</option>
@@ -218,7 +287,7 @@ function InteractivePane() {
             value={epsilonDecay}
             onChange={e => setEpsilonDecay(Number(e.target.value))}
             disabled={training}
-            className="bg-slate-800 text-white px-2 py-1 rounded"
+            className="cursor-pointer bg-slate-800 text-white px-2 py-1 rounded"
           >
             {[500, 1000, 2000, 5000, 10000].map(val => (
               <option key={val} value={val}>{val}</option>
@@ -233,27 +302,90 @@ function InteractivePane() {
             value={gamma}
             onChange={e => setGamma(Number(e.target.value))}
             disabled={training}
-            className="bg-slate-800 text-white px-2 py-1 rounded"
+            className="cursor-pointer bg-slate-800 text-white px-2 py-1 rounded"
           >
             {[0.90, 0.95, 0.99, 0.999].map(val => (
               <option key={val} value={val}>{val}</option>
             ))}
           </select>
         </div>
-        <div className="flex gap-6 text-gray-300 text-sm">
-          <div>Episode: {episode}</div>
-          <div>Total Steps: {totalSteps}</div>
-          <div>Last Episode Reward: {lastReward.toFixed(3)}</div>
-          <div>Epsilon: {epsilon.toFixed(3)}</div>
-          <div>Avg Reward (10): {avgReward.toFixed(3)}</div>
+
+        
+        <div className="w-full my-2">
+          <h4 className="text-lg font-medium">Agent Sensors:</h4>
         </div>
+        <div className="flex gap-3">
+          <SensorButton
+            title="Diagonal Sensors"
+            selected={diagonalSensors}
+            onClick={() => setDiagonalSensors(s => !s)}
+            type="diagonal"
+          />
+          <SensorButton
+            title="Straight Sensors"
+            selected={straightSensors}
+            onClick={() => setStraightSensors(s => !s)}
+            type="straight"
+          />
+          <SensorButton
+            title="Goal Localization"
+            selected={goalLocalication}
+            onClick={() => setGoalLocalication(s => !s)}
+            type="goal"
+          />
+          <SensorButton
+            title="Pit Distance"
+            selected={pitDistance}
+            onClick={() => setPitDistance(s => !s)}
+            type="pit"
+          />
+        </div>
+        {sensorError && (
+          <div className=" text-red-400 text-sm mt-2">
+            {sensorError}
+          </div>
+        )}
       </div>
 
+      <div className="flex gap-3 mb-8">
+          <button
+            className="cursor-pointer px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded"
+            onClick={reset}
+            disabled={training}
+          >
+            Restart Training
+          </button>
+          {!training ? (
+          <button
+            className="cursor-pointer px-4 py-2 bg-green-600 hover:bg-green-700 rounded"
+            onClick={() => {
+              if (!diagonalSensors && !straightSensors && !goalLocalication && !pitDistance) {
+                setSensorError("Please select at least one agent sensor before starting training.");
+                return;
+              }
+              setSensorError("");
+              startTraining({ episodes: 100 });
+            }}
+            disabled={training}
+          >
+            Start Training
+          </button>
+          ) : (
+          <button
+            className="cursor-pointer px-4 py-2 bg-red-600 hover:bg-red-700 rounded"
+            onClick={stopTraining}
+            disabled={!training}
+          >
+            Stop Training
+          </button>
+          )}
+        </div>
+
       {/* Three Grid Layout */}
-      <div className="flex justify-center gap-8 mb-8">
+      <div className="flex justify-center gap-8 mb-4">
         {/* Left Panel - Q-value arrows only */}
         <div className="flex flex-col items-center">
-          <h3 className="text-xl font-semibold mb-4">Q-Value Arrows</h3>
+          <h3 className="text-xl font-semibold mb-4">Q-Value</h3>
           <GridWorldCanvas
             gridSize={state.gridSize}
             cellSize={state.cellSize}
@@ -262,13 +394,16 @@ function InteractivePane() {
             pit={state.pit}
             goal={state.goalPos}
             actionQGrid={cellQGrid}
-            directionLidarFlag={false}
+            showGoal={false}
+            showPitDistance={false}
+            showDiagonalSensors={false}
+            showStraightSensors={false}
           />
         </div>
 
         {/* Center Panel - Base GridWorld (no arrows/lines) */}
         <div className="flex flex-col items-center">
-          <h3 className="text-xl font-semibold mb-4">Base Environment</h3>
+          <h3 className="text-xl font-semibold mb-4">Environment</h3>
           <GridWorldCanvas
             gridSize={state.gridSize}
             cellSize={state.cellSize}
@@ -277,13 +412,16 @@ function InteractivePane() {
             pit={state.pit}
             goal={state.goalPos}
             actionQGrid={null}
-            directionLidarFlag={false}
+            showGoal={false}
+            showPitDistance={false}
+            showDiagonalSensors={false}
+            showStraightSensors={false}
           />
         </div>
 
         {/* Right Panel - Agent visualizations (lidar, goal line, pit circle) */}
         <div className="flex flex-col items-center">
-          <h3 className="text-xl font-semibold mb-4">Agent Sensors</h3>
+          <h3 className="text-xl font-semibold mb-4">Agent Observations</h3>
           <GridWorldCanvas
             gridSize={state.gridSize}
             cellSize={state.cellSize}
@@ -292,14 +430,24 @@ function InteractivePane() {
             pit={state.pit}
             goal={state.goalPos}
             actionQGrid={null}
-            directionLidarFlag={true}
+            showGoal={goalLocalication}
+            showPitDistance={pitDistance}
+            showDiagonalSensors={diagonalSensors}
+            showStraightSensors={straightSensors}
           />
         </div>
+      </div>
+      <div className="flex gap-6 text-gray-300 text-sm mb-8">
+        <div>Episode: {episode}</div>
+        <div>Total Steps: {totalSteps}</div>
+        <div>Last Episode Reward: {lastReward.toFixed(3)}</div>
+        <div>Epsilon: {epsilon.toFixed(3)}</div>
+        <div>Avg Reward (10): {avgReward.toFixed(3)}</div>
       </div>
 
       {/* Neural Network Panel - Below the grids */}
       <div className="flex flex-col items-center w-full">
-        <h3 className="text-xl font-semibold mb-4">Neural Network</h3>
+        <h3 className="text-2xl font-semibold tb-2">Q Network</h3>
         <div className="w-full flex justify-center">
           <NNVisual model={model} refreshKey={totalSteps} width={1400} height={600} />
         </div>

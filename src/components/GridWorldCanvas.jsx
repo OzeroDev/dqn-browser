@@ -8,7 +8,10 @@ export default function GridWorldCanvas({
   pit,
   goal,
   actionQGrid, // 2D array of q-values for each cell or null
-  directionLidarFlag,
+  showGoal = false,
+  showPitDistance = false,
+  showDiagonalSensors = false,
+  showStraightSensors = false,
 }) {
   const canvasRef = useRef(null);
   useEffect(() => {
@@ -62,50 +65,44 @@ export default function GridWorldCanvas({
     ctx.arc(cx, cy, Math.floor(cellSize / 3), 0, Math.PI * 2);
     ctx.fill();
 
-    if (directionLidarFlag){
-
-      // green faint line from agent to goal
-      ctx.width = 1
+    if (showGoal) {
+      ctx.lineWidth = 1;
       ctx.strokeStyle = "rgb(90,200,90,0.7)";
       ctx.beginPath();
       ctx.moveTo(cx, cy);
       ctx.lineTo(gc * cellSize + cellSize / 2, gr * cellSize + cellSize / 2);
       ctx.stroke();
+    }
 
-      // draw circle of radius size that is agent distance to pit
-      const pitFactor = 1-(Math.sqrt((pc - ac)**2 + (pr - ar)**2)/Math.sqrt(2*((gridSize-1)**2)))
-      ctx.lineWidth = pitFactor**3*5
-      ctx.strokeStyle = "rgb(255,0,0,"+pitFactor+")";
+    if (showPitDistance) {
+      const pitFactor = 1 - (Math.sqrt((pc - ac)**2 + (pr - ar)**2) / Math.sqrt(2 * ((gridSize-1)**2)));
+      ctx.lineWidth = pitFactor**3 * 5;
+      ctx.strokeStyle = "rgb(255,0,0," + pitFactor + ")";
       ctx.beginPath();
       ctx.arc(cx, cy, Math.sqrt((pc - ac)**2 + (pr - ar)**2) * cellSize, 0, Math.PI * 2);
       ctx.stroke();
+    }
 
+    if (showDiagonalSensors || showStraightSensors) {
       const [r, c] = agentPos;
       const blocksStr = blocks.map(([r, c]) => `${r},${c}`);
       const directionLidar = [
-        // up left
         (r > 0 && c > 0 && !blocksStr.includes(`${r-1},${c-1}`)) ? 1 : 0,
-        // up
         (r > 0 && !blocksStr.includes(`${r-1},${c}`)) ? 1 : 0,
-        // up right
         (r > 0 && c < gridSize - 1 && !blocksStr.includes(`${r-1},${c+1}`)) ? 1 : 0,
-        // right
         (c < gridSize - 1 && !blocksStr.includes(`${r},${c+1}`)) ? 1 : 0,
-        // down right
         (r < gridSize - 1 && c < gridSize - 1 && !blocksStr.includes(`${r+1},${c+1}`)) ? 1 : 0,
-        // down
         (r < gridSize - 1 && !blocksStr.includes(`${r+1},${c}`)) ? 1 : 0,
-        // down left
         (r < gridSize - 1 && c > 0 && !blocksStr.includes(`${r+1},${c-1}`)) ? 1 : 0,
-        // left
         (c > 0 && !blocksStr.includes(`${r},${c-1}`)) ? 1 : 0,
       ];
-      
-      // draw lidar
       ctx.lineWidth = 2;
       for (let i = 0; i < 8; i++) {
-        const d = [0,0]
-        switch (i){
+        const isDiag = i === 0 || i === 2 || i === 4 || i === 6;
+        const isStraight = i === 1 || i === 3 || i === 5 || i === 7;
+        if ((isDiag && !showDiagonalSensors) || (isStraight && !showStraightSensors)) continue;
+        const d = [0, 0];
+        switch (i) {
           case 0: d[0] = -1; d[1] = -1; break;
           case 1: d[0] = 0; d[1] = -1; break;
           case 2: d[0] = 1; d[1] = -1; break;
@@ -115,10 +112,7 @@ export default function GridWorldCanvas({
           case 6: d[0] = -1; d[1] = 1; break;
           case 7: d[0] = -1; d[1] = 0; break;
         }
-
-        if (directionLidar[i] == 0) ctx.strokeStyle = "rgb(150, 0, 0)"; else ctx.strokeStyle = "rgb(255,255,255)";
-        
-        //const d = directionLidar[i];
+        if (directionLidar[i] === 0) ctx.strokeStyle = "rgb(150, 0, 0)"; else ctx.strokeStyle = "rgb(255,255,255)";
         const x = cx + d[0] * cellSize;
         const y = cy + d[1] * cellSize;
         ctx.beginPath();
@@ -197,7 +191,7 @@ export default function GridWorldCanvas({
         }
       }
     }
-  }, [gridSize, cellSize, agentPos, blocks, pit, goal, actionQGrid]);
+  }, [gridSize, cellSize, agentPos, blocks, pit, goal, actionQGrid, showGoal, showPitDistance, showDiagonalSensors, showStraightSensors]);
 
   return <canvas ref={canvasRef} className="border border-gray-700 rounded" />;
 }

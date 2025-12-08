@@ -64,7 +64,7 @@ export default function DQNExplain() {
       <div className="max-w-6xl mx-auto px-6 py-12">
         <header className="flex flex-col gap-2 mb-8">
           <h2 className="text-3xl font-bold">How Deep Q-Networks Work</h2>
-          <p className="text-slate-300 max-w-3xl">
+          <p className="text-slate-300">
             A ground-up explanation of Deep Q-Networks (DQN): starting from reinforcement learning basics,
             building through tabular Q-learning, and culminating in the key innovations that make DQN effective
             for high-dimensional tasks.

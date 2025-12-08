@@ -372,7 +372,7 @@ export default function useDQN({ gridState, envStep, envReset, hiddenLayers = [1
   4. right
 */
 
-export function useNewDQN({ gridState, envStep, envReset, hiddenLayers = [64, 64], learningRate = 5e-4, epsilonDecay = 1000, gamma = 0.99 }) {
+export function useNewDQN({ gridState, envStep, envReset, hiddenLayers = [64, 64], learningRate = 5e-4, epsilonDecay = 1000, gamma = 0.99, sensorFlags = {} }) {
   const [training, setTraining] = useState(false);
   const [episode, setEpisode] = useState(0);
   const [totalSteps, setTotalSteps] = useState(0);
@@ -448,48 +448,47 @@ export function useNewDQN({ gridState, envStep, envReset, hiddenLayers = [64, 64
   
 
 
-  // Create rich feature representation from raw position
   const createFeatures = (rawPos) => {
     const [r, c] = rawPos;
-    const { gridSize, goalPos, pit } = envInfoRef.current;
-    
-    const normR = r / (gridSize - 1);
-    const normC = c / (gridSize - 1);
-    
+    const { gridSize, goalPos, pit, blocks } = envInfoRef.current;
+    const flags = sensorFlags || {};
+    const { diagonalSensors = true, straightSensors = true, goalLocalization = true, pitDistance = true } = flags;
+
     // Relative distances to goal (normalized)
     const goalDistR = (goalPos[0] - r) / gridSize;
     const goalDistC = (goalPos[1] - c) / gridSize;
-    
-    // Manhattan distance to pit (normalized)
+
+    // Direction availability flags (8 directions)
+    const dir = [
+      (r > 0 && c > 0 && !blocks.has(`${r-1},${c-1}`)) ? 1 : 0, // up-left
+      (r > 0 && !blocks.has(`${r-1},${c}`)) ? 1 : 0,             // up
+      (r > 0 && c < gridSize - 1 && !blocks.has(`${r-1},${c+1}`)) ? 1 : 0, // up-right
+      (c < gridSize - 1 && !blocks.has(`${r},${c+1}`)) ? 1 : 0,  // right
+      (r < gridSize - 1 && c < gridSize - 1 && !blocks.has(`${r+1},${c+1}`)) ? 1 : 0, // down-right
+      (r < gridSize - 1 && !blocks.has(`${r+1},${c}`)) ? 1 : 0,  // down
+      (r < gridSize - 1 && c > 0 && !blocks.has(`${r+1},${c-1}`)) ? 1 : 0, // down-left
+      (c > 0 && !blocks.has(`${r},${c-1}`)) ? 1 : 0,              // left
+    ];
+
+    // Mask direction features according to flags
+    if (!straightSensors) { dir[1] = 0; dir[3] = 0; dir[5] = 0; dir[7] = 0; }
+    if (!diagonalSensors) { dir[0] = 0; dir[2] = 0; dir[4] = 0; dir[6] = 0; }
+
+    // Pit distance feature (normalized), masked by flag
     const pitDistR = Math.abs(pit[0] - r);
     const pitDistC = Math.abs(pit[1] - c);
-    
-    return [
-      // dx to goal
-      goalDistC,
-      // dy to goal
-      goalDistR,
-      // 8 dimensions if step is valid (0 if not such as boundary or obstacle)
-      
-      // up left
-      (r > 0 && c > 0 && !envInfoRef.current.blocks.has(`${r-1},${c-1}`)) ? 1 : 0,
-      // up
-      (r > 0 && !envInfoRef.current.blocks.has(`${r-1},${c}`)) ? 1 : 0,
-      // up right
-      (r > 0 && c < gridSize - 1 && !envInfoRef.current.blocks.has(`${r-1},${c+1}`)) ? 1 : 0,
-      // right
-      (c < gridSize - 1 && !envInfoRef.current.blocks.has(`${r},${c+1}`)) ? 1 : 0,
-      // down right
-      (r < gridSize - 1 && c < gridSize - 1 && !envInfoRef.current.blocks.has(`${r+1},${c+1}`)) ? 1 : 0,
-      // down
-      (r < gridSize - 1 && !envInfoRef.current.blocks.has(`${r+1},${c}`)) ? 1 : 0,
-      // down left
-      (r < gridSize - 1 && c > 0 && !envInfoRef.current.blocks.has(`${r+1},${c-1}`)) ? 1 : 0,
-      // left
-      (c > 0 && !envInfoRef.current.blocks.has(`${r},${c-1}`)) ? 1 : 0,
+    let pitFeature = 1 - (Math.sqrt(pitDistR**2 + pitDistC**2) / Math.sqrt(2 * (((gridSize)**2))));
+    if (!pitDistance) pitFeature = 0;
 
-      // normalized distance to pit
-      1-(Math.sqrt(pitDistR**2 + pitDistC**2)/Math.sqrt(2*(((gridSize)**2)))),
+    // Goal features masked by flag
+    const gdx = goalLocalization ? goalDistC : 0;
+    const gdy = goalLocalization ? goalDistR : 0;
+
+    return [
+      gdx,
+      gdy,
+      dir[0], dir[1], dir[2], dir[3], dir[4], dir[5], dir[6], dir[7],
+      pitFeature,
     ];
   };
 
