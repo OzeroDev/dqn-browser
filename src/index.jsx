@@ -70,22 +70,10 @@ function InteractivePane() {
   }, [reset]);
 
   return (
-    <div className="flex overflow-hidden w-full h-full justify-center ">
-      <div className="overflow-y-hidden h-screen">
-        <h2 className="text-2xl font-semibold mt-6">GridWorld Deep Q</h2>
-        <div className="mt-6">
-          <GridWorldCanvas
-            gridSize={state.gridSize}
-            cellSize={state.cellSize}
-            agentPos={state.agentPos}
-            blocks={state.blocks}
-            pit={state.pit}
-            goal={state.goalPos}
-            actionQGrid={cellQGrid}
-            directionLidarFlag={true}
-          />
-        </div>
-        <div className="mt-6 flex gap-3">
+    <div className="flex flex-col overflow-hidden w-full h-full items-center p-8">
+      {/* Top Control Panel */}
+      <div className="flex flex-col items-center mb-8">
+        <div className="flex gap-3 mb-4">
           <button
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded"
             onClick={reset}
@@ -108,7 +96,7 @@ function InteractivePane() {
             Stop
           </button>
         </div>
-        <div className="mt-6 text-gray-300">
+        <div className="flex gap-6 text-gray-300 text-sm">
           <div>Episode: {episode}</div>
           <div>Total Steps: {totalSteps}</div>
           <div>Last Episode Reward: {lastReward.toFixed(3)}</div>
@@ -116,8 +104,61 @@ function InteractivePane() {
           <div>Avg Reward (10): {avgReward.toFixed(3)}</div>
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto h-screen">
-        <NNVisual model={model} refreshKey={totalSteps} />
+
+      {/* Three Grid Layout */}
+      <div className="flex justify-center gap-8 mb-8">
+        {/* Left Panel - Q-value arrows only */}
+        <div className="flex flex-col items-center">
+          <h3 className="text-xl font-semibold mb-4">Q-Value Arrows</h3>
+          <GridWorldCanvas
+            gridSize={state.gridSize}
+            cellSize={state.cellSize}
+            agentPos={state.agentPos}
+            blocks={state.blocks}
+            pit={state.pit}
+            goal={state.goalPos}
+            actionQGrid={cellQGrid}
+            directionLidarFlag={false}
+          />
+        </div>
+
+        {/* Center Panel - Base GridWorld (no arrows/lines) */}
+        <div className="flex flex-col items-center">
+          <h3 className="text-xl font-semibold mb-4">Base Environment</h3>
+          <GridWorldCanvas
+            gridSize={state.gridSize}
+            cellSize={state.cellSize}
+            agentPos={state.agentPos}
+            blocks={state.blocks}
+            pit={state.pit}
+            goal={state.goalPos}
+            actionQGrid={null}
+            directionLidarFlag={false}
+          />
+        </div>
+
+        {/* Right Panel - Agent visualizations (lidar, goal line, pit circle) */}
+        <div className="flex flex-col items-center">
+          <h3 className="text-xl font-semibold mb-4">Agent Sensors</h3>
+          <GridWorldCanvas
+            gridSize={state.gridSize}
+            cellSize={state.cellSize}
+            agentPos={state.agentPos}
+            blocks={state.blocks}
+            pit={state.pit}
+            goal={state.goalPos}
+            actionQGrid={null}
+            directionLidarFlag={true}
+          />
+        </div>
+      </div>
+
+      {/* Neural Network Panel - Below the grids */}
+      <div className="flex flex-col items-center w-full">
+        <h3 className="text-xl font-semibold mb-4">Neural Network</h3>
+        <div className="w-full flex justify-center">
+          <NNVisual model={model} refreshKey={totalSteps} width={1400} height={600} />
+        </div>
       </div>
     </div>
   );
