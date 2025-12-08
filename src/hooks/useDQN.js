@@ -372,7 +372,7 @@ export default function useDQN({ gridState, envStep, envReset, hiddenLayers = [1
   4. right
 */
 
-export function useNewDQN({ gridState, envStep, envReset, hiddenLayers = [64, 64] }) {
+export function useNewDQN({ gridState, envStep, envReset, hiddenLayers = [64, 64], learningRate = 5e-4, epsilonDecay = 1000, gamma = 0.99 }) {
   const [training, setTraining] = useState(false);
   const [episode, setEpisode] = useState(0);
   const [totalSteps, setTotalSteps] = useState(0);
@@ -389,11 +389,11 @@ export function useNewDQN({ gridState, envStep, envReset, hiddenLayers = [64, 64
   const rewardHistoryRef = useRef([]);
 
   const nActions = 4;
-  const GAMMA = 0.99;
+  const GAMMA = gamma;
   const BATCH_SIZE = 64;
   const EPS_START = 0.9;
   const EPS_END = 0.05;
-  const EPS_DECAY = 1000;
+  const EPS_DECAY = epsilonDecay;
 
   // Calculate feature size based on grid
   const gridSize = gridState?.gridSize || 6;
@@ -425,8 +425,8 @@ export function useNewDQN({ gridState, envStep, envReset, hiddenLayers = [64, 64
 
   useEffect(() => {
     policyRef.current = createDQNModel(nObs, nActions, hiddenLayers);
-    // smaller LR to reduce instability
-    optimizerRef.current = tf.train.adam(5e-4);
+    // use provided learning rate
+    optimizerRef.current = tf.train.adam(learningRate);
 
     // create a target network for stable Q-learning
     // target network starts with same weights as policy
@@ -443,7 +443,7 @@ export function useNewDQN({ gridState, envStep, envReset, hiddenLayers = [64, 64
       const t = tf.tensor2d(zeroBatch);
       policyRef.current.predict(t);
     });
-  }, [nObs, hiddenLayers]);
+  }, [nObs, hiddenLayers, learningRate]);
 
   
 

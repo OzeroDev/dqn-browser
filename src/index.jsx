@@ -18,6 +18,11 @@ function InteractivePane() {
   // Hidden layer config state
   const [numHidden, setNumHidden] = useState(2);
   const [hiddenSizes, setHiddenSizes] = useState([64, 64]);
+  // Hyperparameter config state
+  const [learningRate, setLearningRate] = useState(5e-4);
+  const [epsilonDecay, setEpsilonDecay] = useState(1000);
+  const [gamma, setGamma] = useState(0.99);
+
   // Update hiddenSizes when numHidden changes
   useEffect(() => {
     setHiddenSizes((prev) => {
@@ -43,7 +48,15 @@ function InteractivePane() {
     exploreCount,
     exploitCount,
     model,
-  } = useNewDQN({ gridState: state, envStep: step, envReset: reset, hiddenLayers: hiddenSizes });
+  } = useNewDQN({ 
+    gridState: state, 
+    envStep: step, 
+    envReset: reset, 
+    hiddenLayers: hiddenSizes,
+    learningRate,
+    epsilonDecay,
+    gamma
+  });
 
   const [cellQGrid, setCellQGrid] = useState(null);
 
@@ -144,6 +157,42 @@ function InteractivePane() {
               </div>
             );
           })}
+        </div>
+        {/* Hyperparameter controls */}
+        <div className="flex gap-4 items-center mb-4 flex-wrap">
+          <label className="text-gray-300 text-sm">Learning Rate:</label>
+          <select
+            value={learningRate}
+            onChange={e => setLearningRate(Number(e.target.value))}
+            disabled={training}
+            className="bg-slate-800 text-white px-2 py-1 rounded"
+          >
+            {[0.00001, 0.00005, 0.0001, 0.0005, 0.001].map(val => (
+              <option key={val} value={val}>{val}</option>
+            ))}
+          </select>
+          <label className="text-gray-300 text-sm">Epsilon Decay:</label>
+          <select
+            value={epsilonDecay}
+            onChange={e => setEpsilonDecay(Number(e.target.value))}
+            disabled={training}
+            className="bg-slate-800 text-white px-2 py-1 rounded"
+          >
+            {[500, 1000, 2000, 5000, 10000].map(val => (
+              <option key={val} value={val}>{val}</option>
+            ))}
+          </select>
+          <label className="text-gray-300 text-sm">Gamma:</label>
+          <select
+            value={gamma}
+            onChange={e => setGamma(Number(e.target.value))}
+            disabled={training}
+            className="bg-slate-800 text-white px-2 py-1 rounded"
+          >
+            {[0.90, 0.95, 0.99, 0.999].map(val => (
+              <option key={val} value={val}>{val}</option>
+            ))}
+          </select>
         </div>
         <div className="flex gap-6 text-gray-300 text-sm">
           <div>Episode: {episode}</div>
