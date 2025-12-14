@@ -15,6 +15,8 @@ import DQNExplain from "./components/DQNExplain.jsx";
 function RewardChart({
   rewards,
   currentEpisode,
+  hoveredEpisode = null,
+  onHoverEpisode,
   width = 720,
   height = 180,
 }) {
@@ -117,36 +119,49 @@ function RewardChart({
       .attr("stroke", "#60a5fa")
       .attr("stroke-width", 2);
 
-    pathGroup
+    const points = pathGroup
       .selectAll(".point")
       .data(rewards)
       .join("circle")
       .attr("class", "point")
       .attr("cx", (d, i) => xScale(i + 1))
       .attr("cy", (d) => yScale(d))
-      .attr("r", 2.2)
-      .attr("fill", "#93c5fd")
-      .attr("opacity", 0.95);
+      .attr("r", (d, i) => (hoveredEpisode === i ? 4 : 2.2))
+      .attr("fill", (d, i) => (hoveredEpisode === i ? "#f97316" : "#93c5fd"))
+      .attr("stroke", (d, i) => (hoveredEpisode === i ? "#fff" : "none"))
+      .attr("stroke-width", (d, i) => (hoveredEpisode === i ? 0.6 : 0))
+      .attr("opacity", (d, i) => (hoveredEpisode == null ? 0.95 : hoveredEpisode === i ? 1 : 0.2))
+      .attr("data-idx", (d, i) => i)
+      .on("mouseenter", (event) => {
+        const i = parseInt(event.target.getAttribute("data-idx"), 10);
+        if (onHoverEpisode) onHoverEpisode(i);
+      })
+      .on("mouseleave", () => {
+        if (onHoverEpisode) onHoverEpisode(null);
+      });
 
-    if (rewards.length > 0) {
-      const lastIndex = rewards.length - 1;
-      pathGroup
-        .append("circle")
-        .attr("cx", xScale(lastIndex + 1))
-        .attr("cy", yScale(rewards[lastIndex]))
-        .attr("r", 4)
-        .attr("fill", "#f97316")
-        .attr("stroke", "#fff")
-        .attr("stroke-width", 0.6);
-
-      g.append("text")
-        .attr("x", xScale(lastIndex + 1) + 8)
-        .attr("y", yScale(rewards[lastIndex]) - 6)
-        .attr("fill", "#fef3c7")
+    if (hoveredEpisode != null && rewards[hoveredEpisode] != null) {
+      const hx = xScale(hoveredEpisode + 1);
+      const hy = yScale(rewards[hoveredEpisode]);
+      const tt = g.append("g").attr("class", "tooltip-reward");
+      const text = `Episode ${hoveredEpisode + 1} Reward: ${rewards[hoveredEpisode].toFixed(3)}`;
+      tt.append("rect")
+        .attr("x", hx + 8)
+        .attr("y", hy - 22)
+        .attr("rx", 4)
+        .attr("ry", 4)
+        .attr("width", 140)
+        .attr("height", 18)
+        .attr("fill", "#0f172a")
+        .attr("stroke", "#334155");
+      tt.append("text")
+        .attr("x", hx + 14)
+        .attr("y", hy - 10)
+        .attr("fill", "#e5e7eb")
         .attr("font-size", 11)
-        .text(rewards[lastIndex].toFixed(3));
+        .text(text);
     }
-  }, [rewards, currentEpisode, width, height]);
+  }, [rewards, currentEpisode, hoveredEpisode, width, height]);
 
   return (
     <div className="reward-chart flex flex-col gap-2">
@@ -165,6 +180,8 @@ function StepCountChart({
   exploitHistory = [],
   exploreHistory = [],
   currentEpisode,
+  hoveredEpisode = null,
+  onHoverEpisode,
   width = 720,
   height = 180,
 }) {
@@ -256,16 +273,24 @@ function StepCountChart({
 
     const policyColor = "#22c55e";
     const exploreColor = "#a78bfa";
-    const barWidth = 4;
+    const step = innerWidth / xMaxDomain;
+    const barWidth = Math.max(1, step * 0.8);
     const baselineY = yScale(0);
 
-    pathGroup
+    const bars = pathGroup
       .selectAll(".episode-bar")
       .data(
         d3.range(Math.max(exploitHistory.length, exploreHistory.length))
       )
       .join("g")
       .attr("class", "episode-bar")
+      .attr("opacity", (d) => (hoveredEpisode == null ? 0.9 : d === hoveredEpisode ? 1 : 0.35))
+      .on("mouseenter", (event, d) => {
+        if (onHoverEpisode) onHoverEpisode(d);
+      })
+      .on("mouseleave", () => {
+        if (onHoverEpisode) onHoverEpisode(null);
+      })
       .each(function (i) {
         const gBar = d3.select(this);
         const x = xScale(i + 1) - barWidth / 2;
@@ -296,7 +321,42 @@ function StepCountChart({
             .attr("opacity", 0.6);
         }
       });
-  }, [exploitHistory, exploreHistory, currentEpisode, width, height]);
+
+    if (hoveredEpisode != null) {
+      const i = hoveredEpisode;
+      const policy = exploitHistory[i] || 0;
+      const explore = exploreHistory[i] || 0;
+      const total = policy + explore;
+      const hx = xScale(i + 1);
+      const hy = 12;
+      const tt = g.append("g").attr("class", "tooltip-steps");
+      const lines = [
+        `Episode ${i + 1}`,
+        `Total Steps Count: ${total}`,
+        `Policy Steps Count: ${policy}`,
+        `Explore Steps Count: ${explore}`,
+      ];
+      const boxW = 150;
+      const boxH = 18 * lines.length + 8;
+      tt.append("rect")
+        .attr("x", hx + 8)
+        .attr("y", hy)
+        .attr("rx", 6)
+        .attr("ry", 6)
+        .attr("width", boxW)
+        .attr("height", boxH)
+        .attr("fill", "#0f172a")
+        .attr("stroke", "#334155");
+      lines.forEach((t, idx) => {
+        tt.append("text")
+          .attr("x", hx + 16)
+          .attr("y", hy + 18 + idx * 16)
+          .attr("fill", "#e5e7eb")
+          .attr("font-size", 11)
+          .text(t);
+      });
+    }
+  }, [exploitHistory, exploreHistory, currentEpisode, hoveredEpisode, width, height]);
 
   return (
     <div className="step-count-chart flex flex-col">
@@ -624,6 +684,7 @@ function InteractivePane() {
   const [rewards, setRewards] = useState([]);
   const [exploitHistory, setExploitHistory] = useState([]);
   const [exploreHistory, setExploreHistory] = useState([]);
+  const [hoveredEpisode, setHoveredEpisode] = useState(null);
   const prevEpisodeRef = useRef(0);
 
   useEffect(() => {
@@ -990,6 +1051,8 @@ function InteractivePane() {
             <RewardChart
               rewards={rewards}
               currentEpisode={episode}
+              hoveredEpisode={hoveredEpisode}
+              onHoverEpisode={setHoveredEpisode}
               width={720}
               height={200}
             />
@@ -997,6 +1060,8 @@ function InteractivePane() {
               currentEpisode={episode}
               exploitHistory={exploitHistory}
               exploreHistory={exploreHistory}
+              hoveredEpisode={hoveredEpisode}
+              onHoverEpisode={setHoveredEpisode}
               width={720}
               height={200}
             />
