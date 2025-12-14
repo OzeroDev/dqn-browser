@@ -284,7 +284,7 @@ function StepCountChart({
       )
       .join("g")
       .attr("class", "episode-bar")
-      .attr("opacity", (d) => (hoveredEpisode == null ? 0.9 : d === hoveredEpisode ? 1 : 0.35))
+      .attr("opacity", (d) => (hoveredEpisode == null ? 0.9 : d === hoveredEpisode ? 1 : 0.25))
       .on("mouseenter", (event, d) => {
         if (onHoverEpisode) onHoverEpisode(d);
       })
