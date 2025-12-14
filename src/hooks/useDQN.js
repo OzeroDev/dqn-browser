@@ -264,8 +264,8 @@ export default function useDQN({ gridState, envStep, envReset, hiddenLayers = [1
       for (let ep = 0; ep < episodes; ep++) {
         if (stopRef.current) break;
         // reset per-episode explore/exploit counts
-        setExploreCount(0);
-        setExploitCount(0);
+        let epExplore = 0;
+        let epExploit = 0;
 
         let rawState = envReset();
         let done = false;
@@ -279,9 +279,9 @@ export default function useDQN({ gridState, envStep, envReset, hiddenLayers = [1
 
           // track explore vs exploit
           if (greedy) {
-            setExploitCount((c) => c + 1);
+            epExploit += 1;
           } else {
-            setExploreCount((c) => c + 1);
+            epExplore += 1;
           }
 
           const { obs, reward, terminated, truncated } = envStep(action);
@@ -318,6 +318,9 @@ export default function useDQN({ gridState, envStep, envReset, hiddenLayers = [1
 
         // update lastReward with the last episode's total
         setLastReward(episodeReward);
+
+        setExploitCount(epExploit);
+        setExploreCount(epExplore);
 
         rewardHistoryRef.current.push(episodeReward);
         if (rewardHistoryRef.current.length > 10) {
@@ -371,7 +374,6 @@ export default function useDQN({ gridState, envStep, envReset, hiddenLayers = [1
   3. left
   4. right
 */
-
 export function useNewDQN({ gridState, envStep, envReset, hiddenLayers = [64, 64], learningRate = 5e-4, epsilonDecay = 1000, gamma = 0.99, sensorFlags = {} }) {
   const [training, setTraining] = useState(false);
   const [episode, setEpisode] = useState(0);
@@ -612,15 +614,25 @@ export function useNewDQN({ gridState, envStep, envReset, hiddenLayers = [64, 64
     async ({ episodes = 50 } = {}) => {
       if (!policyRef.current) return;
       stopRef.current = false;
-      setTraining(true);
+      
+      // Reset all training states
+      setEpisode(0);
+      setTotalSteps(0);
+      setLastReward(0);
+      setEpsilon(EPS_START);
+      setAvgReward(0);
+      setExploreCount(0);
+      setExploitCount(0);
       rewardHistoryRef.current = [];
+      
+      setTraining(true);
 
       let globalStep = 0;
       for (let ep = 0; ep < episodes; ep++) {
         if (stopRef.current) break;
         // reset per-episode explore/exploit counts
-        setExploreCount(0);
-        setExploitCount(0);
+        let epExplore = 0;
+        let epExploit = 0;
 
         let rawState = envReset();
         let done = false;
@@ -634,9 +646,9 @@ export function useNewDQN({ gridState, envStep, envReset, hiddenLayers = [64, 64
 
           // track explore vs exploit
           if (greedy) {
-            setExploitCount((c) => c + 1);
+            epExploit += 1;
           } else {
-            setExploreCount((c) => c + 1);
+            epExplore += 1;
           }
 
           const { obs, reward, terminated, truncated } = envStep(action);
@@ -674,6 +686,9 @@ export function useNewDQN({ gridState, envStep, envReset, hiddenLayers = [64, 64
         // update lastReward with the last episode's total
         setLastReward(episodeReward);
 
+        setExploitCount(epExploit);
+        setExploreCount(epExplore);
+
         rewardHistoryRef.current.push(episodeReward);
         if (rewardHistoryRef.current.length > 10) {
           rewardHistoryRef.current.shift();
@@ -697,9 +712,90 @@ export function useNewDQN({ gridState, envStep, envReset, hiddenLayers = [64, 64
     stopRef.current = true;
   }, []);
 
+  const resumeTraining = useCallback(
+    async ({ episodes = 50 } = {}) => {
+      if (!policyRef.current) return;
+      stopRef.current = false;
+      setTraining(true);
+
+      const startEpisode = episode;
+      let globalStep = totalSteps;
+
+      for (let ep = 0; ep < episodes; ep++) {
+        if (stopRef.current) break;
+        let epExplore = 0;
+        let epExploit = 0;
+
+        let rawState = envReset();
+        let done = false;
+        let episodeReward = 0;
+        
+        while (!done) {
+          if (stopRef.current) break;
+
+          const eps = computeEpsilon(globalStep);
+          const { action, greedy } = selectAction(rawState, eps);
+
+          if (greedy) {
+            epExploit += 1;
+          } else {
+            epExplore += 1;
+          }
+
+          const { obs, reward, terminated, truncated } = envStep(action);
+          const nextRawState = obs;
+          
+          episodeReward += reward;
+
+          const stateFeatures = createFeatures(rawState);
+          const nextStateFeatures = createFeatures(nextRawState);
+
+          memoryRef.current.push({
+            state: stateFeatures,
+            action,
+            nextState: nextStateFeatures,
+            reward,
+            done: terminated || truncated,
+          });
+
+          optimizeModel();
+
+          rawState = nextRawState;
+          globalStep += 1;
+
+          if (globalStep % 10 === 0) {
+            setTotalSteps(globalStep);
+            setEpsilon(eps);
+          }
+
+          await new Promise((r) => setTimeout(r, 0));
+          done = terminated || truncated;
+        }
+
+        setLastReward(episodeReward);
+        setExploitCount(epExploit);
+        setExploreCount(epExplore);
+
+        rewardHistoryRef.current.push(episodeReward);
+        if (rewardHistoryRef.current.length > 10) {
+          rewardHistoryRef.current.shift();
+        }
+        const avg = rewardHistoryRef.current.reduce((a, b) => a + b, 0) / rewardHistoryRef.current.length;
+        setAvgReward(avg);
+        setEpisode(startEpisode + ep + 1);
+        // eslint-disable-next-line no-console
+        console.debug('[DQN] episode', startEpisode + ep + 1, 'reward:', episodeReward.toFixed(3), 'avg10:', avg.toFixed(3));
+      }
+
+      setTraining(false);
+    },
+    [envStep, envReset, episode, totalSteps]
+  );
+
   return {
     startTraining,
     stopTraining,
+    resumeTraining,
     training,
     episode,
     totalSteps,

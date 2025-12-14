@@ -13,7 +13,14 @@ import useCartPoleDQN from "./hooks/useCartPoleDQN.js";
 import NNVisual from "./components/NNVisual.jsx";
 import DQNExplain from "./components/DQNExplain.jsx";
 
-function RewardChart({ rewards, currentEpisode, width = 720, height = 180 }) {
+function RewardChart({
+  rewards,
+  currentEpisode,
+  exploitHistory = [],
+  exploreHistory = [],
+  width = 720,
+  height = 180,
+}) {
   const svgRef = useRef(null);
 
   const margin = { top: 10, right: 20, bottom: 30, left: 48 };
@@ -33,7 +40,12 @@ function RewardChart({ rewards, currentEpisode, width = 720, height = 180 }) {
       .append("g")
       .attr("transform", `translate(${margin.left},${margin.top})`);
 
-    const xMaxDomain = Math.max(100, currentEpisode || rewards.length || 0);
+    const xMaxDomain = Math.max(
+      100,
+      currentEpisode || rewards.length || 0,
+      exploitHistory?.length || 0,
+      exploreHistory?.length || 0
+    );
     const xScale = d3
       .scaleLinear()
       .domain([0, xMaxDomain])
@@ -102,6 +114,48 @@ function RewardChart({ rewards, currentEpisode, width = 720, height = 180 }) {
 
     const pathGroup = g.append("g").attr("clip-path", "url(#clip)");
 
+    const policyColor = "#22c55e";
+    const exploreColor = "#a78bfa";
+    const barWidth = 4;
+    const pxPerStep = 1;
+    const baselineY = yScale(0);
+
+    pathGroup
+      .selectAll(".episode-bar")
+      .data(
+        d3.range(
+          Math.max(rewards.length, exploitHistory.length, exploreHistory.length)
+        )
+      )
+      .join("g")
+      .attr("class", "episode-bar")
+      .each(function (i) {
+        const gBar = d3.select(this);
+        const x = xScale(i + 1) - barWidth / 2;
+        const upH = (exploitHistory[i] || 0) * pxPerStep;
+        const downH = (exploreHistory[i] || 0) * pxPerStep;
+        if (upH > 0) {
+          gBar
+            .append("rect")
+            .attr("x", x)
+            .attr("y", baselineY - upH)
+            .attr("width", barWidth)
+            .attr("height", upH)
+            .attr("fill", policyColor)
+            .attr("opacity", 0.6);
+        }
+        if (downH > 0) {
+          gBar
+            .append("rect")
+            .attr("x", x)
+            .attr("y", baselineY)
+            .attr("width", barWidth)
+            .attr("height", downH)
+            .attr("fill", exploreColor)
+            .attr("opacity", 0.6);
+        }
+      });
+
     pathGroup
       .append("path")
       .datum(rewards)
@@ -110,7 +164,6 @@ function RewardChart({ rewards, currentEpisode, width = 720, height = 180 }) {
       .attr("stroke", "#60a5fa")
       .attr("stroke-width", 2);
 
-    // Draw circles for points (smaller)
     pathGroup
       .selectAll(".point")
       .data(rewards)
@@ -122,7 +175,6 @@ function RewardChart({ rewards, currentEpisode, width = 720, height = 180 }) {
       .attr("fill", "#93c5fd")
       .attr("opacity", 0.95);
 
-    // Highlight most recent point
     if (rewards.length > 0) {
       const lastIndex = rewards.length - 1;
       pathGroup
@@ -134,7 +186,6 @@ function RewardChart({ rewards, currentEpisode, width = 720, height = 180 }) {
         .attr("stroke", "#fff")
         .attr("stroke-width", 0.6);
 
-      // small label near last point
       g.append("text")
         .attr("x", xScale(lastIndex + 1) + 8)
         .attr("y", yScale(rewards[lastIndex]) - 6)
@@ -142,19 +193,49 @@ function RewardChart({ rewards, currentEpisode, width = 720, height = 180 }) {
         .attr("font-size", 11)
         .text(rewards[lastIndex].toFixed(3));
     }
+
+    const legend = g
+      .append("g")
+      .attr("transform", `translate(${innerWidth - 150},10)`);
+    legend
+      .append("rect")
+      .attr("x", 0)
+      .attr("y", 0)
+      .attr("width", 12)
+      .attr("height", 12)
+      .attr("fill", policyColor)
+      .attr("opacity", 0.7);
+    legend
+      .append("text")
+      .attr("x", 18)
+      .attr("y", 10)
+      .attr("fill", "#cbd5e1")
+      .attr("font-size", 11)
+      .text("Policy (greedy)");
+    legend
+      .append("rect")
+      .attr("x", 0)
+      .attr("y", 20)
+      .attr("width", 12)
+      .attr("height", 12)
+      .attr("fill", exploreColor)
+      .attr("opacity", 0.7);
+    legend
+      .append("text")
+      .attr("x", 18)
+      .attr("y", 30)
+      .attr("fill", "#cbd5e1")
+      .attr("font-size", 11)
+      .text("Explore (random)");
   }, [rewards, currentEpisode, width, height]);
 
   return (
-    <div className="w-full flex justify-center mb-8 mt-4">
-      <div className="p-4 rounded-lg bg-slate-900 border border-slate-700">
-        <div className="reward-chart flex flex-col gap-2">
-          <h4 className="font-medium">Reward Over Episodes</h4>
-          <svg
-            ref={svgRef}
-            style={{ background: "transparent", borderRadius: 6 }}
-          />
-        </div>
-      </div>
+    <div className="reward-chart flex flex-col gap-2">
+      <h4 className="font-medium">Reward Over Episodes</h4>
+      <svg
+        ref={svgRef}
+        style={{ background: "transparent", borderRadius: 6 }}
+      />
     </div>
   );
 }
@@ -167,7 +248,7 @@ function HyperparamLabel({ children, tooltip, targetId }) {
     const element = document.getElementById(targetId);
     if (element) {
       element.scrollIntoView({ behavior: "smooth", block: "center" });
-      
+
       element.classList.add("highlight-flash");
       setTimeout(() => element.classList.remove("highlight-flash"), 2000);
     }
@@ -228,6 +309,7 @@ function InteractivePane() {
   const {
     startTraining,
     stopTraining,
+    resumeTraining,
     training,
     episode,
     totalSteps,
@@ -289,9 +371,10 @@ function InteractivePane() {
     setCellQGrid(grid);
   }, [state, getQValues]);
 
-  useEffect(() => {
+  const resetTrainParams = () => {
     reset();
-  }, [reset]);
+    setStopped(false);
+  };
 
   const SensorPreview = ({ type }) => {
     const size = 60;
@@ -460,26 +543,28 @@ function InteractivePane() {
 
   // ---- reward history state and episode change handling ----
   const [rewards, setRewards] = useState([]);
+  const [exploitHistory, setExploitHistory] = useState([]);
+  const [exploreHistory, setExploreHistory] = useState([]);
   const prevEpisodeRef = useRef(0);
 
   useEffect(() => {
-    // If episode decreased (reset), clear rewards
     if (episode < prevEpisodeRef.current) {
       setRewards([]);
+      setExploitHistory([]);
+      setExploreHistory([]);
     }
-    // If episode increased, push lastReward into rewards
     if (episode > prevEpisodeRef.current) {
-      // lastReward may be undefined at very first episodes; guard
       if (typeof lastReward === "number" && Number.isFinite(lastReward)) {
         setRewards((r) => [...r, lastReward]);
       } else {
-        // if lastReward isn't a number yet, push NaN-safe value 0
         setRewards((r) => [...r, 0]);
       }
+      setExploitHistory((h) => [...h, exploitCount || 0]);
+      setExploreHistory((h) => [...h, exploreCount || 0]);
     }
 
     prevEpisodeRef.current = episode;
-  }, [episode, lastReward]);
+  }, [episode, lastReward, exploitCount, exploreCount]);
 
   return (
     <div className="flex flex-col overflow-hidden w-full h-full items-center p-8">
@@ -509,7 +594,10 @@ function InteractivePane() {
           <label className="text-gray-300 text-sm">Number of Layers:</label>
           <select
             value={numHidden}
-            onChange={(e) => setNumHidden(Number(e.target.value))}
+            onChange={(e) => {
+              setNumHidden(Number(e.target.value));
+              if (stopped) resetTrainParams();
+            }}
             disabled={training}
             className="cursor-pointer bg-slate-800 text-white px-2 py-1 rounded"
           >
@@ -535,6 +623,7 @@ function InteractivePane() {
                         i === idx ? Number(e.target.value) : s
                       )
                     );
+                    if (stopped) resetTrainParams();
                   }}
                   className="cursor-pointer bg-slate-800 text-white px-2 py-1 rounded border border-slate-700"
                 >
@@ -565,7 +654,10 @@ function InteractivePane() {
           </label>
           <select
             value={learningRate}
-            onChange={(e) => setLearningRate(Number(e.target.value))}
+            onChange={(e) => {
+              setLearningRate(Number(e.target.value));
+              if (stopped) resetTrainParams();
+            }}
             disabled={training}
             className="cursor-pointer bg-slate-800 text-white px-2 py-1 rounded"
           >
@@ -586,7 +678,10 @@ function InteractivePane() {
           </label>
           <select
             value={epsilonDecay}
-            onChange={(e) => setEpsilonDecay(Number(e.target.value))}
+            onChange={(e) => {
+              setEpsilonDecay(Number(e.target.value));
+              if (stopped) resetTrainParams();
+            }}
             disabled={training}
             className="cursor-pointer bg-slate-800 text-white px-2 py-1 rounded"
           >
@@ -607,7 +702,10 @@ function InteractivePane() {
           </label>
           <select
             value={gamma}
-            onChange={(e) => setGamma(Number(e.target.value))}
+            onChange={(e) => {
+              setGamma(Number(e.target.value));
+              if (stopped) resetTrainParams();
+            }}
             disabled={training}
             className="cursor-pointer bg-slate-800 text-white px-2 py-1 rounded"
           >
@@ -626,25 +724,37 @@ function InteractivePane() {
           <SensorButton
             title="Diagonal LiDAR"
             selected={diagonalSensors}
-            onClick={() => setDiagonalSensors((s) => !s)}
+            onClick={() => {
+              setDiagonalSensors((s) => !s);
+              if (stopped) resetTrainParams();
+            }}
             type="diagonal"
           />
           <SensorButton
             title="Cardinal LiDAR"
             selected={straightSensors}
-            onClick={() => setStraightSensors((s) => !s)}
+            onClick={() => {
+              setStraightSensors((s) => !s);
+              if (stopped) resetTrainParams();
+            }}
             type="straight"
           />
           <SensorButton
             title="Goal Localization"
             selected={goalLocalication}
-            onClick={() => setGoalLocalication((s) => !s)}
+            onClick={() => {
+              setGoalLocalication((s) => !s);
+              if (stopped) resetTrainParams();
+            }}
             type="goal"
           />
           <SensorButton
             title="Pit Distance"
             selected={pitDistance}
-            onClick={() => setPitDistance((s) => !s)}
+            onClick={() => {
+              setPitDistance((s) => !s);
+              if (stopped) resetTrainParams();
+            }}
             type="pit"
           />
         </div>
@@ -679,8 +789,7 @@ function InteractivePane() {
           <button
             className="cursor-pointer px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded"
             onClick={() => {
-              reset();
-              setStopped(false);
+              resetTrainParams();
             }}
             disabled={training}
           >
@@ -704,11 +813,13 @@ function InteractivePane() {
               }
               setSensorError("");
               setStopped(false);
-              startTraining({ episodes: 100 });
+              if (stopped) {
+                resumeTraining({ episodes: 100 });
+              } else startTraining({ episodes: 100 });
             }}
             disabled={training}
           >
-            Start Training
+            {stopped ? "Resume Training" : "Start Training"}
           </button>
         ) : (
           <button
@@ -795,12 +906,18 @@ function InteractivePane() {
 
       {/* Reward Chart placed beneath the labels */}
       <div className="mb-8">
-        <RewardChart
-          rewards={rewards}
-          currentEpisode={episode}
-          width={720}
-          height={200}
-        />
+        <div className="w-full flex justify-center mb-8 mt-4">
+          <div className="p-4 rounded-lg bg-slate-900 border border-slate-700">
+            <RewardChart
+              rewards={rewards}
+              currentEpisode={episode}
+              exploitHistory={exploitHistory}
+              exploreHistory={exploreHistory}
+              width={720}
+              height={200}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
